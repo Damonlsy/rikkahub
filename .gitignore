@@ -1,0 +1,19 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.cursor
+.history
+.kotlin
+# Build artifacts
+*.apk
+*.dex
+*.bin
+classes*.jar
+executionHistory.bin
