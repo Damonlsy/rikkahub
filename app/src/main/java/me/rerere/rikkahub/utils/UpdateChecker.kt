@@ -15,13 +15,17 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.common.http.await
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val API_URL = "https://updates.rikka-ai.com/"
+private const val API_URL = "https://api.github.com/repos/Damonlsy/rikkahub/releases/latest"
 
 class UpdateChecker(
     private val client: OkHttpClient,
@@ -36,9 +40,47 @@ class UpdateChecker(
     )
 
     private fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
-        // Fork build (Damonlsy): the upstream update feed is disabled so the
-        // app never prompts to install the official RikkaHub release.
         emit(UiState.Loading)
+        runCatching {
+            val request = Request.Builder()
+                .url(API_URL)
+                .header("Accept", "application/vnd.github+json")
+                .build()
+            val response = client.newCall(request).await()
+            if (!response.isSuccessful) return@runCatching
+            val body = response.body?.string() ?: return@runCatching
+            val release = json.parseToJsonElement(body).jsonObject
+            val tag = release["tag_name"]?.jsonPrimitive?.contentOrNull ?: return@runCatching
+            val version = tag.removePrefix("v")
+            val publishedAt = release["published_at"]?.jsonPrimitive?.contentOrNull ?: ""
+            val changelog = release["body"]?.jsonPrimitive?.contentOrNull ?: ""
+            val assets = release["assets"]?.jsonArray ?: return@runCatching
+            val downloads = assets.mapNotNull { asset ->
+                val obj = asset.jsonObject
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val url = obj["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val size = obj["size"]?.jsonPrimitive?.contentOrNull ?: "0"
+                UpdateDownload(
+                    name = name,
+                    url = url,
+                    size = size,
+                )
+            }
+            val currentVersion = BuildConfig.VERSION_NAME
+            val hasUpdate = Version.compare(currentVersion, version) < 0
+            if (hasUpdate) {
+                emit(UiState.Success(UpdateInfo(
+                    version = version,
+                    publishedAt = publishedAt,
+                    changelog = changelog,
+                    downloads = downloads,
+                )))
+            } else {
+                emit(UiState.Idle)
+            }
+        }.onFailure {
+            emit(UiState.Error(it))
+        }
     }.flowOn(Dispatchers.IO)
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {
