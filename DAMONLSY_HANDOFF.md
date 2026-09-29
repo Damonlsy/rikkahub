@@ -72,10 +72,14 @@ Set-Location D:\rikkahub          # ⚠️ 必须在 D:\rikkahub 下执行，否
 - 权限：`com.android.alarm.permission.SET_ALARM`
 - 文件：`data/ai/tools/AlarmTools.kt`
 
-### 6. 应用锁（已按用户反馈重做）
+### 6. 应用锁（已按用户反馈重做，2.6.2 二期完成）
 - **AI 工具**：`app_lock_tool`（lock/unlock/list/protected）
-- 白名单 = **受保护、永远不允许锁**：微信、学习通、支付宝、完美校园、胖乖生活、到梦空间、百度网盘
-- AI 可锁/解其他任意应用；**lock 必须写备注**
+- **受保护清单（2.6.2 起用户可自定义）**：`AppLockStore` 动态存储（`KEY_PROTECTED`），首次按 7 个默认标签播种（微信、学习通、支付宝、完美校园、胖乖生活、到梦空间、百度网盘，**只取已安装的**），之后完全听用户的；受保护 = AI 和手动都锁不了，开启保护会自动解锁。硬编码 `APP_LOCK_PROTECTED` 已删除
+- AI 可锁/解其他任意应用；**lock 必须写备注**；**解锁不受任何限制**（工具层不拦，也不给 AI 加"必须解锁"要求——用户要的就是 AI 能拒绝）
+- **手动管理页（2.6.2 新增）**：`Screen.AppLock` → `ui/pages/setting/AppLockPage.kt`（设置 → 应用锁）：无障碍状态、已锁定列表一键解锁、全部可启动应用点行弹窗锁/解锁/设受保护；入口不再直接跳系统无障碍
+- **读取应用列表权限（红米根因，2.6.2 修复）**：HyperOS/MIUI 在 QUERY_ALL_PACKAGES 之上还要求 `com.android.permission.GET_INSTALLED_APPS`（Manifest 已声明 + 进管理页自动 `requestPermissions`，没声明的话动态申请弹不出来）；没开时 `scannedApps<=10`，AI 工具报错带诊断 hint。红米机主手动在系统设置里开也有效（已实证 = 权限是唯一根因）
+- **防杀自检指引（2.6.2 新增）**：管理页「开了无障碍却不拦截？」→ 弹各品牌保活步骤（电池白名单/自启动/锁定后台）
+- **紧急逃生（用户拍板）**：关系统无障碍 = 全局暂停拦截（锁定记录保留；AI 无法自行重开无障碍，系统不允许静默开关）；不加 PIN、不加工作区解锁
 - 拦截方式：**无障碍服务** `service/AppLockAccessibilityService.kt`。命中锁定后：
   1. 立即 `performGlobalAction(GLOBAL_ACTION_HOME)` 退回桌面（应用打不开/闪退）
   2. 弹**半透明**提示卡片（`PixelFormat.TRANSLUCENT` + 遮罩 = 主题 `scrim` 50% 左右，**外面能看见桌面**；居中圆角卡片用**当前主题配色**：`surfaceContainerHigh` 卡片底 / `onSurface` 标题 / `onSurfaceVariant` 次要文字 / `primary`+`onPrimary` 按钮）。配色逻辑与 `RikkahubTheme` 一致（`blockColors()`：动态取色或预设主题 + 读 `rikkahub.preferences` 的 `colorMode` 判断深浅色）
@@ -84,7 +88,7 @@ Set-Location D:\rikkahub          # ⚠️ 必须在 D:\rikkahub 下执行，否
   4. `killBackgroundProcesses(pkg)` 兜底杀后台（需 `KILL_BACKGROUND_PROCESSES` 权限）
 - 提示框只在用户打开**别的桌面 App**（`getLaunchIntentForPackage != null`）时才收起；桌面/系统 UI/输入法不收起；点「知道了」也收起
 - 存储：`data/applock/AppLockStore.kt`（独立 SharedPreferences `app_lock`）
-- 入口：**设置 → 应用锁**（跳系统无障碍授权）；无障碍里服务名是「**Damonlsy 应用锁**」
+- 入口：**设置 → 应用锁**（打开手动管理页，管理页内可跳系统无障碍授权）；无障碍里服务名是「**Damonlsy 应用锁**」
 - 声明：`AndroidManifest.xml` 里 service（`exported="true"` + BIND_ACCESSIBILITY_SERVICE）+ `res/xml/accessibility_service_config.xml`
 
 ### 7. 气泡 / 消息
@@ -200,6 +204,8 @@ Set-Location D:\rikkahub          # ⚠️ 必须在 D:\rikkahub 下执行，否
 - 朋友圈**待用户验证**：侧边栏入口，用户 + AI 发动态/点赞/评论/收藏，九宫格图片
 - 用户说「后期会加很多工作流（定时任务之类）」——定时查岗是第一个，后续可能继续加
 - 闹钟已确认可用
+- **2.6.2 批（应用锁二期）待装机验证**：进应用锁页自动弹「读取应用列表」申请（红米机主的新包）、手动锁定页、防杀指引弹窗
+- 用户要求**攒批再发**：2.6.2 已提交未发版，等再多修几件一起发
 
 ## 素材位置（用户的美化素材）
 - `E:\ui美化素材\`（像素小图标 18 张 + 山竹素材(45).png 小恶魔框）
@@ -351,4 +357,32 @@ Set-Location D:\rikkahub          # ⚠️ 必须在 D:\rikkahub 下执行，否
 - `testDebugUnitTest`：6 个失败均与本次改动无关——`workspace` 5 个（Windows 无 /bin/sh、符号链接需特权，环境性）；`ai` 1 个（`StreamTraceReplayTest.replay DeepSeek Chat Completions trace`，ai 模块本次零改动，上游即失败）。
 - 新字符串（`values/strings.xml` + `values-zh/strings.xml`）：`setting_speech_ai_voice_auto`、`setting_speech_voice_transcribe_title`、`setting_speech_voice_transcribe_desc`。
 
-**状态**：全部改动仍在工作区未提交；新增文件 `VoiceReplyHintTransformer.kt`、`FileASRTranscriber.kt`、`deploy/`。
+**状态**：已随 v2.6.1 提交推送（`3991ffc2`）；新增文件 `VoiceReplyHintTransformer.kt`、`FileASRTranscriber.kt`、`deploy/`。
+
+## v2.6.1 发版 + 应用锁二期（2026-09-29，2.6.2 已提交未发版，攒批中）
+
+**v2.6.1 已发布**
+- versionCode 191 / versionName 2.6.1，commit `3991ffc2`，release id `399039173`，资产 `RikkaHub-v2.6.1-arm64-v8a-debug.apk`（81,629,671 字节），`/releases/latest` 已返回 v2.6.1。
+- 直链（ghproxy，免梯子但 ~0.2MB/s）：`https://ghproxy.net/https://github.com/Damonlsy/rikkahub/releases/download/v2.6.1/RikkaHub-v2.6.1-arm64-v8a-debug.apk`；实测 ghproxy 0.2MB/s、ghfast 0.1MB/s——**APK 直接发 QQ 群文件最省事**。
+- **2.5.4 老内测用户不弹更新卡**（老包 `checkUpdate()` 被砍成只返回 Loading，永远不弹）→ 只能手动装。桌面副本：`C:\Users\lenovo\Desktop\Damonlsy-2.6.1-arm64.apk`；老包在 `D:\rikkahub-backup-20260927\dist\Damonlsy-2.5.4-beta1-universal-debug.apk`（versionCode 189）。
+- 包身份验证：debug 包 `com.damonlsy.rikkahub.debug`，签名 SHA-256 `033089ed990f6c22d615da8fcae8ebe7eac1581fecd3b57137db69fdc98eb491`，与 2.5.4-beta1 一致 → 覆盖安装保数据。备份恢复：设置 → 数据备份 → 导入导出 → 备份文件导入（导入后**重启 app** 才生效，失败自动回滚）。
+- 用户设备已 adb 升到 2.6.1（设备 `3B162600AXJ00000`，adb 在 `C:\Users\lenovo\AppData\Local\Android\Sdk\platform-tools\adb.exe`）。
+
+**红米「AI 找不到应用」根因（已实证）**
+- MIUI/HyperOS 在 QUERY_ALL_PACKAGES 之上叠加系统权限 `com.android.permission.GET_INSTALLED_APPS`（YD/T 2407-2021），默认拒绝、须 `requestPermissions` 动态申请；不申请则 QUERY_ALL_PACKAGES 被无视（只能看到自己）。OPPO 内部默认授予，所以本机测不出。
+- **红米机主实测：在系统设置里手动开了该权限后，2.6.1 就能锁了 → 证实权限是唯一根因。**
+- 2.6.2 对策三件套：Manifest 声明（动态申请的前提）+ 进应用锁页自动申请 + AI 工具失败返回 `scannedApps<=10` 诊断 hint。
+
+**2.6.2 批内容（commit `6802f8d4` + 防杀指引，versionCode 192 / versionName 2.6.2，assembleDebug 已过，未发版）**
+1. GET_INSTALLED_APPS 修复（见上）。
+2. 手动管理页 `AppLockPage`（`Screen.AppLock`）：无障碍状态、已锁定列表一键解锁、全部可启动应用点行弹窗（锁定 + 备注 + 设受保护）、权限补申请、防杀指引弹窗。
+3. 受保护清单动态化（`AppLockStore` `KEY_PROTECTED`/`KEY_PROTECTED_SEEDED`/`ensureProtectedSeeded`），`AppLockTools`/`WorkflowService` 调用点同步改造，工具 description 改为"用 protected 查最新清单"。
+4. 修正 `SettingPreferencesUIPage` 应用锁文案（原文把"受保护=锁不了"写反成"AI 可以锁白名单里的应用"）。
+5. 防杀指引：各品牌保活步骤（通用/vivo-iQOO/ColorOS/MIUI）。
+
+**发版决策（用户拍板，别再提议相反方案）**
+- **不加 PIN 解锁、不加工作区解锁文件**：紧急情况关系统无障碍 = 全局暂停拦截，够用了。
+- 给 AI 加"用户要求就必须解锁"的描述被否——**用户要的就是 AI 能拒绝**（有人想让 AI 管着自己）。
+- **不急着发 2.6.2**，等再多攒几个修复一起发；发版走 `.agents/skills/publish-release/SKILL.md`（双语日志 ≤10 条、发布前必须请用户确认、tag 带 v 前缀、标题=版本号）。
+- 上传：参考 `%TEMP%\opencode\apk_upload_v261.ps1`（curl 直连循环、`--max-time 1500`、201=成功、80 次重试）；gh CLI 未安装，用 curl + GitHub REST API。构建：`JAVA_HOME=C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot` + `gradlew assembleDebug`。
+- ⚠️ GitHub Push Protection 已激活：提交前 `git grep` 查 `ghp_|github_pat_|AKIA|BEGIN.*PRIVATE`（技能文档里的 `ghp_your_github_token` 占位符是历史遗留，无风险但别动它）；**PAT 绝不能再写进仓库文件**。

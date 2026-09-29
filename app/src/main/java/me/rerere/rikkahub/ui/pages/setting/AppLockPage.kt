@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LargeFlexibleTopAppBar
@@ -103,6 +105,7 @@ fun AppLockPage(
     var locked by remember(refreshKey) { mutableStateOf(appLockStore.lockedPackages()) }
     var protectedSet by remember(refreshKey) { mutableStateOf(appLockStore.protectedPackages()) }
     var editing by remember { mutableStateOf<AppRow?>(null) }
+    var showKeepAlive by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -150,6 +153,13 @@ fun AppLockPage(
                             },
                         )
                     }
+                    item(
+                        onClick = { showKeepAlive = true },
+                        headlineContent = { Text("开了无障碍却不拦截？") },
+                        supportingContent = {
+                            Text("多半是被系统杀后台了——点这里看各品牌保活步骤")
+                        },
+                    )
                 }
             }
 
@@ -301,6 +311,42 @@ fun AppLockPage(
             },
             dismissButton = {
                 TextButton(onClick = { editing = null }) { Text("取消") }
+            },
+        )
+    }
+
+    if (showKeepAlive) {
+        AlertDialog(
+            onDismissRequest = { showKeepAlive = false },
+            title = { Text("保持后台运行（防杀）") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        "安卓会杀后台省电。服务被杀后，无障碍开关看着还是「已开」，" +
+                            "但拦截已经停了。按你的品牌设置：\n" +
+                            "\n通用（所有手机）\n" +
+                            "· 电池 → 找到 Damonlsy → 选「无限制 / 允许后台运行」\n" +
+                            "· 自启动管理里允许 Damonlsy\n" +
+                            "· 最近任务里把 Damonlsy 卡片下拉加锁，别用「一键加速」清掉它\n" +
+                            "\nvivo / iQOO\n" +
+                            "· 设置 → 电池 → 后台高耗电 → 允许 Damonlsy\n" +
+                            "· 设置 → 更多设置 → 权限管理 → 自启动 → 打开\n" +
+                            "\nOPPO / realme / 一加\n" +
+                            "· 电池 → 耗电管理 → 允许后台运行\n" +
+                            "· 设置 → 应用管理 → 启动管理 → Damonlsy → 手动管理，全部打开\n" +
+                            "\n小米 / 红米\n" +
+                            "· 应用设置 → 应用管理 → Damonlsy → 省电策略 → 无限制\n" +
+                            "· 自启动管理里打开 Damonlsy\n" +
+                            "\n设置完从最近任务划掉 Damonlsy 再打开试一次；还不行就重启手机。",
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showKeepAlive = false }) { Text("知道了") }
             },
         )
     }
