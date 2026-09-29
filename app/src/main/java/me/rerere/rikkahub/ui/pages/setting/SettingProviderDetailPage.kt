@@ -134,6 +134,27 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 
+/**
+ * DeepSeek 官方当前模型的兜底列表（2026-09）：
+ * `deepseek-flash` = V4.1 Flash（原生多模态）、`deepseek-v4-pro` / `deepseek-v4-flash`
+ * （旧名兼容路由）、`deepseek-v4-flash-vision-exp`（实验视觉，兼容路由）。
+ * /models 拉取失败或返回里缺这些新模型时合并进去。
+ */
+private val DEEPSEEK_FALLBACK_MODELS: List<Model> = listOf(
+    "deepseek-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash-vision-exp",
+).map { id ->
+    Model(
+        modelId = id,
+        displayName = id,
+        inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(id),
+        outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(id),
+        abilities = ModelRegistry.MODEL_ABILITIES.getData(id),
+    )
+}
+
 @Composable
 fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -388,15 +409,26 @@ private fun ModelList(
 ) {
     val providerManager = koinInject<ProviderManager>()
     val modelList by produceState(emptyList(), providerSetting) {
-        runCatching {
+        val remote = runCatching {
             println("loading models...")
-            value = providerManager.getProviderByType(providerSetting)
+            providerManager.getProviderByType(providerSetting)
                 .listModels(providerSetting)
-                .sortedBy { it.modelId }
                 .toList()
-        }.onFailure {
-            it.printStackTrace()
         }
+        val fetched = remote.getOrNull().orEmpty()
+        // DeepSeek 兜底：/models 拉取失败或返回不全时，补上官方当前模型，避免新模型添加不了
+        val baseUrl = when (providerSetting) {
+            is ProviderSetting.OpenAI -> providerSetting.baseUrl
+            is ProviderSetting.Google -> providerSetting.baseUrl
+            is ProviderSetting.Claude -> providerSetting.baseUrl
+        }
+        val fallback = if (baseUrl.contains("api.deepseek.com", ignoreCase = true)) {
+            DEEPSEEK_FALLBACK_MODELS.filter { fb -> fetched.none { it.modelId == fb.modelId } }
+        } else {
+            emptyList()
+        }
+        remote.exceptionOrNull()?.printStackTrace()
+        value = (fetched + fallback).sortedBy { it.modelId }
     }
     var expanded by rememberSaveable { mutableStateOf(true) }
     val lazyListState = rememberLazyListState()

@@ -142,6 +142,27 @@ fun WorkflowSettingPage(
                 }
             }
 
+            item("workflowAiDecides") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    item(
+                        headlineContent = { Text("AI 自行决定发不发消息") },
+                        supportingContent = {
+                            Text("开启后，AI 每次查岗自己判断值不值得发——没话说就不发，不打扰你；关闭则每轮都会发一条。")
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = config.aiDecidesSend,
+                                onCheckedChange = { value ->
+                                    workflowStore.update { it.copy(aiDecidesSend = value) }
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+
             item("workflowParams") {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),

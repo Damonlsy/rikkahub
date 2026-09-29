@@ -219,7 +219,22 @@ class ChatVM(
         if (content.isEmptyInputMessage()) return
         analytics.logEvent("ai_send_message", null)
 
+        // AI 语音回复 auto 模式：本次消息是否要求下一条回复带语音条
+        pendingAutoVoice = settings.value.shouldAutoVoiceReply(content)
         chatService.sendMessage(_conversationId, content, answer)
+    }
+
+    /**
+     * AI 语音回复 auto 模式：下一次生成完成后是否需要合成语音条。
+     * 在发送时判定（用户发了语音消息 / 文字含触发词），生成完成后由 [AIVoiceReply] 消费。
+     */
+    @Volatile
+    var pendingAutoVoice: Boolean = false
+        private set
+
+    /** 消费掉 auto 语音回复触发标记（每次生成只触发一次）。 */
+    fun consumeAutoVoiceTrigger() {
+        pendingAutoVoice = false
     }
 
     /**
@@ -297,14 +312,18 @@ class ChatVM(
                             message
                         } else {
                             val newParts = buildList {
-                                if (hideText) {
-                                    addAll(
-                                        message.parts.map { part ->
-                                            if (part is UIMessagePart.Text) part.withVoiceHidden() else part
+                                message.parts.forEach { part ->
+                                    var current: UIMessagePart = part
+                                    if (current is UIMessagePart.Text) {
+                                        // 挂语音条时把 AI 主动发语音的 [语音] 标记从展示文本里去掉
+                                        current = current.copy(
+                                            text = current.text.replace(VOICE_REPLY_MARKER, "")
+                                        )
+                                        if (hideText) {
+                                            current = current.withVoiceHidden()
                                         }
-                                    )
-                                } else {
-                                    addAll(message.parts)
+                                    }
+                                    add(current)
                                 }
                                 addAll(parts)
                             }

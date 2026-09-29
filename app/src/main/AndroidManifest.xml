@@ -30,6 +30,11 @@
   <!-- 设备上下文注入：拿当前定位给天气用（只读位置，不后台定位） -->
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <!-- 应用锁：Android 11+ 包可见性限制，不声明这个 getInstalledApplications 只能拿到桌面可见的应用，
+       导致 AI 按名字锁应用时"找不到软件" -->
+  <uses-permission
+    android:name="android.permission.QUERY_ALL_PACKAGES"
+    tools:ignore="QueryAllPackagesPermission" />
 
   <uses-feature
     android:name="android.hardware.camera"

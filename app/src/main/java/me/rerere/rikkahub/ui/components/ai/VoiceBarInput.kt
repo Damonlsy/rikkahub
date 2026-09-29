@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Mic01
 import me.rerere.rikkahub.R
@@ -57,13 +59,16 @@ private const val CANCEL_THRESHOLD_DP = 64f
 internal fun VoiceBarInputRow(
     permissionGranted: Boolean,
     onRequestPermission: () -> Unit,
-    onSendRecording: (File, Long) -> Unit,
+    onSendRecording: (File, Long, String?) -> Unit,
+    liveTranscribe: Boolean = false,
     onError: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     var recorder by remember { mutableStateOf<VoiceBarRecorder?>(null) }
+    var transcriber by remember { mutableStateOf<LiveSpeechTranscriber?>(null) }
     var pendingFile by remember { mutableStateOf<File?>(null) }
     var recording by remember { mutableStateOf(false) }
     var cancelArmed by remember { mutableStateOf(false) }
@@ -91,6 +96,13 @@ internal fun VoiceBarInputRow(
             elapsedMs = 0
             amplitudeHistory.clear()
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            // 本机识别：录音同时听写出文字（配了模型 ASR 时 ChatPage 会优先用模型结果）
+            if (liveTranscribe) {
+                val live = LiveSpeechTranscriber(context)
+                if (live.start()) {
+                    transcriber = live
+                }
+            }
         } else {
             runCatching { file.delete() }
             onError(failedText)
@@ -106,13 +118,30 @@ internal fun VoiceBarInputRow(
         val cancelled = !send || cancelArmed
         cancelArmed = false
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        val live = transcriber
+        transcriber = null
         if (cancelled) {
             active.cancel()
+            live?.stop()
             return
         }
         val duration = active.stop()
         if (duration != null && duration >= MIN_RECORD_MS && file != null) {
-            onSendRecording(file, duration)
+            if (live == null) {
+                onSendRecording(file, duration, null)
+            } else {
+                // 等几百毫秒看能不能拿到 final 识别结果；用独立 scope，避免手势协程
+                // 因 recording 状态变化被取消时把发送也带没了
+                scope.launch {
+                    try {
+                        onSendRecording(file, duration, live.awaitFinal())
+                    } finally {
+                        live.stop()
+                    }
+                }
+            }
+        } else {
+            live?.stop()
         }
     }
 

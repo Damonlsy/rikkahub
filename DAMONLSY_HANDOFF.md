@@ -275,3 +275,80 @@ Set-Location D:\rikkahub          # ⚠️ 必须在 D:\rikkahub 下执行，否
 - 新文案 EN/ZH 全部加在 `strings.xml`/`values-zh.xml` 的 `</string>` 段前（无缩进风格）。
 
 **待用户真机验证**：按住录音/上滑取消 → 气泡内联播放 → 顶栏电话拨出/挂断出记录卡 → 设置三态切换（voice_only 隐藏文字、切回恢复）。
+
+
+## 开源 GitHub + 应用内一键更新（2026-09-28 晚，仓库已完整 + Release 已建，APK 上传重试中）
+
+**成果**
+1. **仓库**：`Damonlsy/rikkahub`（fork 自 `rikkahub/rikkahub`，AGPL-3.0 ✓）。main 分支已包含全部代码 + 全部大文件（11 个 jniLibs/.so/idf.utf8/baseline profiles 齐全），HEAD `9c1da29`。PAT：（已从文档移除，见本机上传脚本 apk_upload_direct.ps1 与 git remote URL）（repo scope）。
+2. **Release**：`v2.6.0`（release id `398213418`，非 prerelease，`/releases/latest` 可命中）。tag 已修正指向 `9c1da29`（创建时没指定 target_commitish，tag 一度落在默认分支 master=上游代码，已删重建）。
+3. **UpdateChecker**（`utils/UpdateChecker.kt`）：`https://api.github.com/repos/Damonlsy/rikkahub/releases/latest`，解析 `tag_name/published_at/body/assets[]`，`removePrefix("v")` 后 SemVer 比较（`2.5.4-beta1 < 2.6.0` ✓），有新版发 `UiState.Success`（含下载列表）否则 `Idle`；`downloadUpdate` 走 DownloadManager。ChatVM 仍受 `updateCheckDisabledUntilEpochMillis` 门控。
+
+**网络经验（关键，下次直接用）**
+- 本机系统代理 `127.0.0.1:7897`（Clash Verge Rev，浏览器走它所以网页操作一直正常），**git/curl 默认不走**；已设 `git config --global http.proxy/https.proxy http://127.0.0.1:7897`。
+- `github.com` 直连 IP 间歇被墙（20.205.243.166 不通 / 140.82.113.3、114.3 通）；`api.github.com`、`uploads.github.com` 多数时候通。
+- **大文件上传会被随机 RST**（无固定阈值，1.5MB~70MB 都可能死）：直连有时能传到 70MB/86MB，代理路线反而总在 1-4MB 死 → APK 走**纯直连循环重试**（`%TEMP%\opencode\apk_upload_direct.ps1`，日志 `apk_upload.log`）。
+- **大文件进仓库的正确姿势**：上游 `rikkahub/rikkahub` 本来就有这些文件（fork 网络共享对象存储）→ `git fetch --depth 1 <upstream> master` → `git checkout FETCH_HEAD -- <路径>` → commit → push，**服务器端已有 blob，几乎零流量**，秒过。Contents API 传 8MB+ JSON 会被断开，别试。
+- Clash 控制器只在 named pipe（`\\.\pipe\verge-mihomo-...`）+127.0.0.1:9097/secret，TCP 查不到，别浪费时间。
+- 小 commit/push 正常（`http.version HTTP/1.1`、`core.compression 0`、`http.postBuffer 100MB` 已配）。
+
+**发版流程（以后每次）**
+1. bump `app/build.gradle.kts` 的 `versionCode`/`versionName`（当前 189 / 2.5.4-beta1）。
+2. `run_build.ps1` 出 APK（`app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`）。
+3. GitHub 打 Release：tag 用 `vX.Y.Z` 且**必须指定 `target_commitish=main`**，挂 APK 资产；上传用循环重试直连。
+4. 装机版（debug，包名带 `.debug` 后缀）收到更新卡 → DownloadManager 下载 → 覆盖安装。
+
+**阻塞 / 待办**
+- APK `RikkaHub-v2.6.0-arm64-v8a-debug.apk`（86.8MB）上传中：后台循环，成功条件 HTTP 201（看 `apk_upload.log`）；Release 目前 0 资产。
+- **手机访问 `api.github.com` 100% 丢包**（无稳定代理）→ 真机更新卡出不来，等方案：小克推荐 Cloudflare Worker 代理 GitHub API（免费、国内可达），未拍板。
+- PC→github.com 大推送仍偶发 TLS 失败，重试即可。
+
+
+## 应用内更新上线：Release v2.6.0 + 双源检查 + 镜像下载（2026-09-28 深夜，全链路已验证）
+
+**最终形态**
+1. **Release v2.6.0 正式发布**（id `398213418`，draft=False）：资产 `RikkaHub-v2.6.0-arm64-v8a-debug.apk`（81,595,223 字节，versionCode **190** / versionName **2.6.0**）。用户主页分享直链（已测通 206）：
+   `https://ghproxy.net/https://github.com/Damonlsy/rikkahub/releases/download/v2.6.0/RikkaHub-v2.6.0-arm64-v8a-debug.apk`
+2. **UpdateChecker 双源**（`utils/UpdateChecker.kt`）：`API_URLS = [api.github.com/.../releases/latest, rikkahub-update.rikkahub.workers.dev/releases/latest]`，逐个尝试，全失败才发 `UiState.Error`；下载链接统一改写 `https://github.com/` → `https://ghproxy.net/` 前缀（`DOWNLOAD_MIRROR_PREFIX`）。
+3. **Cloudflare Worker 已部署**（备用源）：`https://rikkahub-update.rikkahub.workers.dev/releases/latest`，代码 `deploy/update-proxy-worker.js`（含 `env.GITHUB_TOKEN` secret，防 CF 共享 IP 被 GitHub 限流 403），账号子域 `rikkahub.workers.dev`。部署方式：`C:\...\nodejs\node-v24.21.0-win-x64` 便携 Node + `npx wrangler deploy`（wrangler 已 OAuth 登录，配置在 `%APPDATA%\Roaming\xdg.config\.wrangler`）。
+
+**国内网络结论（实测，别再走弯路）**
+- **手机 HTTPS 直连 `api.github.com` 是通的**！之前"手机连不上"是被 ping 误导（GitHub 不回 ICMP）→ 检查更新不需要代理。
+- 手机 `github.com` 打不开（转圈后空白）→ 下载必须走镜像。
+- **`*.workers.dev` 被 SNI 干扰**（TCP 通、TLS 秒断，真 IP 104.21.x 也一样）→ Worker 国内直连不可达，只能当备用。
+- `ghproxy.net` / `ghfast.top` 镜像国内直连可用（206）；PC 直连下载偶发随机 RST，**直连循环重试**能成（新 APK 第 1 轮就过，旧的第 21 轮过）。
+- DNS 污染实例：本地解析 workers.dev 返回假 IP `154.92.16.97`；1.1.1.1 DoH（走代理）返回真 IP。
+
+**发版踩坑（下次必看）**
+- **删 tag 会把 Release 转成 draft**（或建 Release 时 tag 指错分支），draft 对 `/releases/latest` 返回 404、对外不可见 → 发布后必查 `draft=false`。
+- **bump 版本号**：`app/build.gradle.kts` versionCode/versionName（现 190 / 2.6.0）；忘 bump = 测试用户更新后卡永远弹。
+- 替换资产：`DELETE /releases/assets/{id}` → 重传（直连循环脚本 `%TEMP%\opencode\apk_upload_direct.ps1`）。
+- 手机端用户（你）自己的设备：`updateCheckDisabledUntilEpochMillis=1791206256375`（禁到 2026-10-05）+ 本地已是 2.6.0，双保险永不弹卡。
+
+**其他**
+- **用户红线：电脑绝对不能做系统更新**（Windows Update 碰都不碰）；本机只在 `%TEMP%\opencode\nodejs` 放了便携 Node，可随时删。
+- git 全局代理已配 `http.proxy=127.0.0.1:7897`（Clash Verge）；小 commit 正常推。
+- 已验证：2.6.0 装机（versionCode 190）冷启动无崩溃，前台已还原抖音。
+
+- 参考项目："D:\rikkahub-backup-20260926\orangechat-reference.zip"（OrangeChat 二改项目，用户评价：里面有一个工作流很不错，后续可解包借鉴）。
+
+
+## 用户九项需求批（2026-09-29，全部完成：assembleDebug 通过 + 单测已跑）
+
+**九项清单与状态**
+1. **锁应用找不到软件**（done）：`AndroidManifest.xml` 加 `QUERY_ALL_PACKAGES`。
+2. **定时查岗改「AI 自行决定开关」**（done）：`WorkflowStore`（AI 可写开关状态）/ `WorkflowService`（执行时尊重 AI 决定）/ `WorkflowSettingPage`（开关 UI + 提示词）。
+3. **拍一拍让 AI 自己选词**（done，09-29）：`PatTools.kt` 描述重写——manner/action/part 由模型根据语气自己挑词传入（词库或自造词），漏传才退回随机抽。
+4. **上下文注入手机温度 + 软提示**（done）：`utils/DeviceContext.kt`（电量/天气/最近应用等 <device_context>，经 `DeviceContextTransformer` 挂系统提示词）。
+5. **用户语音转文字再发给 AI**（done）：新增 `speech/src/main/java/me/rerere/asr/FileASRTranscriber.kt`（OpenAIRealtime / DashScope / Step / MiMo 分支，PCM/WAV 转换、下混重采样，Volcengine 返回 null 不转写）；`DisplaySetting.voiceInputTranscribe`（默认 true）；`ChatPage.onSendVoiceMessage` 语音 + 文字双 part 发送；`SettingSpeechPage` 新增「语音转文字」开关。
+6. **语音条宽度随时长**（done，验证即可）：`VoiceBarBubble.kt` 已有 `width = (72 + 秒*3).coerceIn(72..240)dp`，时长取 metadata 或 MediaMetadataRetriever 探测，无需改动。
+7. **AI 发语音：默认文字 / 用户要求 / AI 自决**（done，09-29 完整）：设置「AI 语音回复」四档 off/auto/text_and_voice/voice_only；auto 档触发条件 = 发送时语音消息或触发词（`AIVoiceReply.kt` 的 `AUTO_VOICE_TRIGGERS`）**或**回复文本带 `[语音]`/`[voice]` 标记；`VoiceReplyHintTransformer`（仅 auto 档注入系统提示词）告诉模型可用该标记主动发语音；`ChatVM.appendAssistantMessageParts` 挂语音条时自动把标记从展示文本抹掉，TTS 文本同样剔除。
+8. **DeepSeek 新模型不显示**（done，09-29）：`SettingProviderDetailPage.kt` 的 `ModelList` 拉取 /models 后，baseUrl 含 `api.deepseek.com` 时合并 `DEEPSEEK_FALLBACK_MODELS`（`deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp`，能力取自 `ModelRegistry`），按 modelId 去重排序；拉取异常 printStackTrace 不再吞掉。注意 `ProviderSetting.baseUrl` 只在 OpenAI/Google/Claude 子类上（sealed），要用 when 取值。
+9. **非识图模型 OCR 兜底**（无需开发）：上游已有 `OcrTransformer`（`ChatService.inputTransformers` 注册，设置页 `ocrModelId`/`ocrPrompt` 配置识图模型+提示词），直接用即可。
+
+**构建 / 测试（09-29 实跑）**
+- `assembleDebug` 通过；`:app:compileDebugKotlin` / `:speech:compileDebugKotlin` 通过。
+- `testDebugUnitTest`：6 个失败均与本次改动无关——`workspace` 5 个（Windows 无 /bin/sh、符号链接需特权，环境性）；`ai` 1 个（`StreamTraceReplayTest.replay DeepSeek Chat Completions trace`，ai 模块本次零改动，上游即失败）。
+- 新字符串（`values/strings.xml` + `values-zh/strings.xml`）：`setting_speech_ai_voice_auto`、`setting_speech_voice_transcribe_title`、`setting_speech_voice_transcribe_desc`。
+
+**状态**：全部改动仍在工作区未提交；新增文件 `VoiceReplyHintTransformer.kt`、`FileASRTranscriber.kt`、`deploy/`。

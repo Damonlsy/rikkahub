@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import android.speech.SpeechRecognizer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -57,12 +58,15 @@ import com.dokar.sonner.ToastType
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.asr.FileASRTranscriber
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Archive01
 import me.rerere.hugeicons.stroke.Cancel01
@@ -350,6 +354,8 @@ private fun ChatPageContent(
         }
     }
     val recordFailedMsg = stringResource(R.string.voice_bar_record_failed)
+    val transcribeFailedMsg = stringResource(R.string.voice_transcribe_failed)
+    val transcribeNoProviderMsg = stringResource(R.string.voice_transcribe_no_provider)
 
     Surface(
         color = MaterialTheme.colorScheme.background,
@@ -493,7 +499,7 @@ private fun ChatPageContent(
                             )
                         )
                     },
-                    onSendVoiceMessage = { file, durationMs ->
+                    onSendVoiceMessage = { file, durationMs, liveText ->
                         scope.launch {
                             runCatching {
                                 val managed = filesManager.saveUploadFromBytes(
@@ -503,14 +509,38 @@ private fun ChatPageContent(
                                 )
                                 val saved = filesManager.getFile(managed)
                                 file.delete()
-                                vm.handleMessageSend(
-                                    listOf(
-                                        UIMessagePart.Audio(
-                                            url = saved.absolutePath,
-                                            metadata = voiceAudioMetadata(durationMs = durationMs),
-                                        )
+                                val parts = mutableListOf<UIMessagePart>(
+                                    UIMessagePart.Audio(
+                                        url = saved.absolutePath,
+                                        metadata = voiceAudioMetadata(durationMs = durationMs),
                                     )
                                 )
+                                // 语音消息转文字：优先模型 ASR 转写文件；没配/失败则用录音时的本机识别结果
+                                if (setting.displaySetting.voiceInputTranscribe) {
+                                    val asr = setting.getSelectedASRProvider()
+                                    var text: String? = null
+                                    if (asr != null) {
+                                        text = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                FileASRTranscriber.transcribe(asr, saved)
+                                            }.getOrNull()
+                                        }
+                                    }
+                                    if (text.isNullOrBlank()) {
+                                        text = liveText
+                                    }
+                                    if (!text.isNullOrBlank()) {
+                                        parts.add(UIMessagePart.Text(text))
+                                    } else {
+                                        val noService = asr == null &&
+                                            !SpeechRecognizer.isRecognitionAvailable(context)
+                                        toaster.show(
+                                            message = if (noService) transcribeNoProviderMsg else transcribeFailedMsg,
+                                            type = ToastType.Warning,
+                                        )
+                                    }
+                                }
+                                vm.handleMessageSend(parts)
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
                             }.onFailure {
                                 toaster.show(message = recordFailedMsg, type = ToastType.Error)

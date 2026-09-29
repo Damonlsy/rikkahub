@@ -655,6 +655,7 @@ data class DisplaySetting(
     val ttsOnlyReadOutsideBrackets: Boolean = false,
     val autoPlayTTSAfterGeneration: Boolean = false,
     val aiVoiceReplyMode: String = "off",
+    val voiceInputTranscribe: Boolean = true,
     val pasteLongTextAsFile: Boolean = false,
     val pasteLongTextThreshold: Int = 1000,
     val sendOnEnter: Boolean = false,

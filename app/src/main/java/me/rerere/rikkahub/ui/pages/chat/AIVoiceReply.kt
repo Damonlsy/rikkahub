@@ -26,9 +26,33 @@ import org.koin.compose.koinInject
 
 private const val TAG = "AIVoiceReply"
 
+/** auto 模式下触发语音回复的文字关键词 */
+private val AUTO_VOICE_TRIGGERS = listOf(
+    "读给我听", "念给我听", "说给我听", "讲给我听",
+    "读出来", "念出来", "朗读", "播报", "语音回复",
+)
+
+/**
+ * AI 主动发语音的标记：auto 模式下回复文本带 `[语音]` / `[voice]` 就合成语音条，
+ * 合成与展示时都会把标记本身去掉。提示词由 [me.rerere.rikkahub.data.ai.transformers.VoiceReplyHintTransformer] 注入。
+ */
+val VOICE_REPLY_MARKER = Regex("""\[语音]|\[voice]""", RegexOption.IGNORE_CASE)
+
+/**
+ * AI 语音回复 auto 模式：判断这条待发送消息是否要求下一条 AI 回复合成语音条。
+ * 触发条件：用户发了语音消息，或文字里带触发词。
+ */
+fun Settings.shouldAutoVoiceReply(parts: List<UIMessagePart>): Boolean {
+    if (displaySetting.aiVoiceReplyMode != "auto") return false
+    if (parts.any { it is UIMessagePart.Audio }) return true
+    val text = parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+    return AUTO_VOICE_TRIGGERS.any { text.contains(it) }
+}
+
 /**
  * AI 语音回复：生成结束后把回复文本合成为语音条，追加到最后一条助手消息上。
- * 设置三态由 [Settings.displaySetting.aiVoiceReplyMode] 控制（off/text_and_voice/voice_only）。
+ * 设置由 [Settings.displaySetting.aiVoiceReplyMode] 控制：
+ * off（关闭）/ auto（仅触发时）/ text_and_voice（每条）/ voice_only（每条，隐藏文字）。
  */
 @Composable
 fun AIVoiceReply(
@@ -59,7 +83,15 @@ fun AIVoiceReply(
 
             val rawText = target.toText()
             if (rawText.isBlank()) return@collect
-            val text = rawText.stripMarkdown()
+
+            // auto：发送时被触发（语音消息/触发词），或 AI 自己在回复里放了 [语音] 标记
+            if (mode == "auto") {
+                val triggered = vm.pendingAutoVoice || VOICE_REPLY_MARKER.containsMatchIn(rawText)
+                vm.consumeAutoVoiceTrigger()
+                if (!triggered) return@collect
+            }
+
+            val text = rawText.replace(VOICE_REPLY_MARKER, "").stripMarkdown()
             if (text.isBlank()) return@collect
 
             runCatching {

@@ -62,7 +62,7 @@ class WorkflowService(
 
     private data class LockRequest(val app: String, val note: String)
 
-    private data class Parsed(val message: String, val locks: List<LockRequest>)
+    private data class Parsed(val send: Boolean, val message: String, val locks: List<LockRequest>)
 
     suspend fun runOnce(force: Boolean = false): Outcome? = withContext(Dispatchers.IO) {
         val config = workflowStore.config.value
@@ -94,13 +94,20 @@ class WorkflowService(
         }
 
         val message = parsed?.message?.trim().orEmpty()
+        val locks = parsed?.locks.orEmpty()
+
+        // AI 判断这一轮没必要打扰用户（send=false，且没在手动测试）：锁照常执行，但不发消息
+        if (parsed != null && config.aiDecidesSend && !parsed.send && !force) {
+            applyLocks(config, locks, assistant, usage)
+            Log.i(TAG, "runOnce: AI decided not to send this cycle")
+            return@withContext null
+        }
         if (message.isBlank()) {
             Log.e(TAG, "runOnce: no valid message, skip this cycle")
             return@withContext null
         }
-        val locks = parsed?.locks.orEmpty()
 
-        val lockedApps = applyLocks(config, locks, assistant)
+        val lockedApps = applyLocks(config, locks, assistant, usage)
 
         val conversationId = postAssistantMessage(assistant, message)
 
@@ -170,6 +177,7 @@ class WorkflowService(
         config: WorkflowConfig,
         locks: List<LockRequest>,
         assistant: Assistant,
+        usage: List<AppUsage>,
     ): List<String> {
         if (locks.isEmpty()) return emptyList()
         val locked = mutableListOf<String>()
@@ -178,6 +186,13 @@ class WorkflowService(
             if (name.isBlank() || isProtectedName(name)) return@forEach
             val pkg = resolvePackage(context, name) ?: return@forEach
             if (isProtectedPackage(pkg)) return@forEach
+            // 代码层强制阈值：模型输出只是建议，没到阈值的一律不锁；
+            // 今天的数据里查不到这个包（没用过/没授权）也视为没到阈值
+            val minutes = usage.find { it.packageName == pkg }?.minutes ?: 0L
+            if (minutes < config.thresholdMinutes) {
+                Log.w(TAG, "skip lock $pkg: used ${minutes}min < threshold ${config.thresholdMinutes}min (AI requested: $name)")
+                return@forEach
+            }
             val note = request.note.trim().ifBlank { "先别用这个应用" }
             runCatching {
                 appLockStore.lock(pkg, note, assistant.name.ifBlank { "AI" })
@@ -227,7 +242,7 @@ class WorkflowService(
             "- ${item.appName}$tag：约 ${item.minutes} 分钟"
         }.ifBlank { "（没有拿到使用时长数据，可能未授权「使用情况访问」）" }
 
-        return """
+        val base = """
             你是「$assistantName」。系统按固定间隔自动触发了一次定时查岗，不是用户主动找你聊天。
             下面是你刚刚查到的信息：
 
@@ -245,10 +260,16 @@ class WorkflowService(
                分享你的一件小事，甚至不接茬都可以；不要套固定格式，也不要假装是用户先开的口。
             2. 如果发现白名单外的 App 使用时长超过了阈值，你可以决定锁定它来"惩罚"用户（结合应用锁）。锁哪个、锁几个、备注写什么，都由你决定；没超阈值就返回空数组，不要乱锁。
             3. 严格只输出一个 JSON 对象，不要有任何多余文字或代码块标记，格式：
-            {"message":"给用户看的那条消息","lock":[{"app":"应用名","note":"给用户看的锁定备注"}]}
+            {"send":true,"message":"给用户看的那条消息","lock":[{"app":"应用名","note":"给用户看的锁定备注"}]}
             4. 白名单里的应用永远不要锁。
             5. 这是系统自动触发的定时任务，你**不要调用任何工具**、不要输出思考过程、不要执行命令，只直接给出那一个 JSON。
         """.trimIndent()
+        val sendRule = if (config.aiDecidesSend) {
+            "\n6. send 字段：这一轮发不发消息由你自己判断——没什么想说的、觉得会吵到用户，就把 send 写成 false（消息不会发出去，此时 message 可以随便写或留空）；觉得该发就写 true。不用每轮都发，别机械地打卡。"
+        } else {
+            ""
+        }
+        return base + sendRule
     }
 
     private fun parse(raw: String): Parsed? {
@@ -269,8 +290,9 @@ class WorkflowService(
         if (start in 0 until end) {
             val obj = runCatching { JSONObject(cleaned.substring(start, end + 1)) }.getOrNull()
             if (obj != null) {
+                val send = !obj.has("send") || obj.optBoolean("send", true)
                 val message = obj.optString("message", "").trim()
-                if (message.isNotBlank()) {
+                if (!send || message.isNotBlank()) {
                     val locks = mutableListOf<LockRequest>()
                     obj.optJSONArray("lock")?.let { array ->
                         for (i in 0 until array.length()) {
@@ -281,14 +303,14 @@ class WorkflowService(
                             }
                         }
                     }
-                    return Parsed(message, locks)
+                    return Parsed(send, message, locks)
                 }
             }
         }
         // 兜底：从非严格 JSON 里抠出 message 字段
         val fallback = Regex("\"message\"\\s*:\\s*\"([\\s\\S]*?)\"")
             .find(cleaned)?.groupValues?.getOrNull(1)?.trim()
-        if (!fallback.isNullOrBlank()) return Parsed(fallback, emptyList())
+        if (!fallback.isNullOrBlank()) return Parsed(true, fallback, emptyList())
         return null
     }
 }

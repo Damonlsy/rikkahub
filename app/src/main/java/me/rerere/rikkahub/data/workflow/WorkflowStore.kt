@@ -17,6 +17,8 @@ data class WorkflowConfig(
     val intervalMinutes: Int = 30,
     /** 白名单外应用使用超过多少分钟，AI 才允许考虑锁应用 */
     val thresholdMinutes: Int = 60,
+    /** true = AI 自行决定这一轮发不发消息（不发就跳过） */
+    val aiDecidesSend: Boolean = true,
 )
 
 class WorkflowStore(context: Context) {
@@ -32,6 +34,7 @@ class WorkflowStore(context: Context) {
         enabled = prefs.getBoolean(KEY_ENABLED, false),
         intervalMinutes = prefs.getInt(KEY_INTERVAL, 30).coerceIn(MIN_INTERVAL, MAX_INTERVAL),
         thresholdMinutes = prefs.getInt(KEY_THRESHOLD, 60).coerceIn(MIN_THRESHOLD, MAX_THRESHOLD),
+        aiDecidesSend = prefs.getBoolean(KEY_AI_DECIDES_SEND, true),
     )
 
     fun update(config: WorkflowConfig) {
@@ -43,6 +46,7 @@ class WorkflowStore(context: Context) {
             .putBoolean(KEY_ENABLED, normalized.enabled)
             .putInt(KEY_INTERVAL, normalized.intervalMinutes)
             .putInt(KEY_THRESHOLD, normalized.thresholdMinutes)
+            .putBoolean(KEY_AI_DECIDES_SEND, normalized.aiDecidesSend)
             .apply()
         _config.value = normalized
     }
@@ -59,5 +63,6 @@ class WorkflowStore(context: Context) {
         private const val KEY_ENABLED = "enabled"
         private const val KEY_INTERVAL = "interval_minutes"
         private const val KEY_THRESHOLD = "threshold_minutes"
+        private const val KEY_AI_DECIDES_SEND = "ai_decides_send"
     }
 }

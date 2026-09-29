@@ -155,7 +155,7 @@ fun ChatInput(
     onStartVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
-    onSendVoiceMessage: (File, Long) -> Unit = { _, _ -> },
+    onSendVoiceMessage: (File, Long, String?) -> Unit = { _, _, _ -> },
     onSendSticker: (StickerEntity) -> Unit = {},
     showStickerPanel: Boolean = false,
     onShowStickerPanelChange: (Boolean) -> Unit = {},
@@ -314,6 +314,7 @@ fun ChatInput(
                             permissionGranted = asrPermission.allRequiredPermissionsGranted,
                             onRequestPermission = { asrPermission.requestPermissions() },
                             onSendRecording = onSendVoiceMessage,
+                            liveTranscribe = settings.displaySetting.voiceInputTranscribe,
                             onError = { message ->
                                 toaster.show(message = message, type = ToastType.Error)
                             },

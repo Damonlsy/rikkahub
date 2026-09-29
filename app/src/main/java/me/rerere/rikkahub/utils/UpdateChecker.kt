@@ -25,7 +25,12 @@ import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val API_URL = "https://api.github.com/repos/Damonlsy/rikkahub/releases/latest"
+    private val API_URLS = listOf(
+        "https://api.github.com/repos/Damonlsy/rikkahub/releases/latest",
+        "https://rikkahub-update.rikkahub.workers.dev/releases/latest",
+    )
+
+    private const val DOWNLOAD_MIRROR_PREFIX = "https://ghproxy.net/"
 
 class UpdateChecker(
     private val client: OkHttpClient,
@@ -41,46 +46,58 @@ class UpdateChecker(
 
     private fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
         emit(UiState.Loading)
-        runCatching {
-            val request = Request.Builder()
-                .url(API_URL)
-                .header("Accept", "application/vnd.github+json")
-                .build()
-            val response = client.newCall(request).await()
-            if (!response.isSuccessful) return@runCatching
-            val body = response.body?.string() ?: return@runCatching
-            val release = json.parseToJsonElement(body).jsonObject
-            val tag = release["tag_name"]?.jsonPrimitive?.contentOrNull ?: return@runCatching
-            val version = tag.removePrefix("v")
-            val publishedAt = release["published_at"]?.jsonPrimitive?.contentOrNull ?: ""
-            val changelog = release["body"]?.jsonPrimitive?.contentOrNull ?: ""
-            val assets = release["assets"]?.jsonArray ?: return@runCatching
-            val downloads = assets.mapNotNull { asset ->
-                val obj = asset.jsonObject
-                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val url = obj["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val size = obj["size"]?.jsonPrimitive?.contentOrNull ?: "0"
-                UpdateDownload(
-                    name = name,
-                    url = url,
-                    size = size,
-                )
+        var lastError: Throwable? = null
+        for (apiUrl in API_URLS) {
+            val result = runCatching {
+                val request = Request.Builder()
+                    .url(apiUrl)
+                    .header("Accept", "application/vnd.github+json")
+                    .build()
+                val response = client.newCall(request).await()
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("HTTP ${response.code}")
+                }
+                val body = response.body?.string() ?: throw IllegalStateException("empty body")
+                val release = json.parseToJsonElement(body).jsonObject
+                val tag = release["tag_name"]?.jsonPrimitive?.contentOrNull
+                    ?: throw IllegalStateException("missing tag_name")
+                val version = tag.removePrefix("v")
+                val publishedAt = release["published_at"]?.jsonPrimitive?.contentOrNull ?: ""
+                val changelog = release["body"]?.jsonPrimitive?.contentOrNull ?: ""
+                val assets = release["assets"]?.jsonArray ?: throw IllegalStateException("missing assets")
+                val downloads = assets.mapNotNull { asset ->
+                    val obj = asset.jsonObject
+                    val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val rawUrl = obj["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val url = if (rawUrl.startsWith("https://github.com/")) {
+                        DOWNLOAD_MIRROR_PREFIX + rawUrl
+                    } else {
+                        rawUrl
+                    }
+                    val size = obj["size"]?.jsonPrimitive?.contentOrNull ?: "0"
+                    UpdateDownload(
+                        name = name,
+                        url = url,
+                        size = size,
+                    )
+                }
+                val currentVersion = BuildConfig.VERSION_NAME
+                val hasUpdate = Version.compare(currentVersion, version) < 0
+                if (hasUpdate) {
+                    emit(UiState.Success(UpdateInfo(
+                        version = version,
+                        publishedAt = publishedAt,
+                        changelog = changelog,
+                        downloads = downloads,
+                    )))
+                } else {
+                    emit(UiState.Idle)
+                }
             }
-            val currentVersion = BuildConfig.VERSION_NAME
-            val hasUpdate = Version.compare(currentVersion, version) < 0
-            if (hasUpdate) {
-                emit(UiState.Success(UpdateInfo(
-                    version = version,
-                    publishedAt = publishedAt,
-                    changelog = changelog,
-                    downloads = downloads,
-                )))
-            } else {
-                emit(UiState.Idle)
-            }
-        }.onFailure {
-            emit(UiState.Error(it))
+            if (result.isSuccess) return@flow
+            lastError = result.exceptionOrNull()
         }
+        emit(UiState.Error(lastError ?: IllegalStateException("update check failed")))
     }.flowOn(Dispatchers.IO)
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {

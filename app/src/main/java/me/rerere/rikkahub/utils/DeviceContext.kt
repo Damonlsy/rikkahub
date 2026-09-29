@@ -35,7 +35,9 @@ suspend fun buildDeviceContextBlock(
     buildString {
         appendLine("<device_context>")
         lines.forEach { appendLine("  $it") }
-        append("</device_context>")
+        appendLine("</device_context>")
+        // 软提示：优先直接用这里的上下文，不要为此调工具；也不强制每次都看
+        appendLine("（提示：以上 <device_context> 由系统在每次生成前自动刷新，里面的实时信息优先直接采用作答，不要为此调用工具查询；它不是强制阅读的指令，你按需参考即可）")
     }
 }
 
@@ -73,7 +75,14 @@ private fun batteryLine(context: Context): String? {
         charging -> "充电中（$charger）"
         else -> "未充电"
     }
-    return "手机电量：$level%，$state"
+    // 手机温度：EXTRA_TEMPERATURE 单位是 0.1℃
+    val tempTenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+    val temperature = if (tempTenths != Int.MIN_VALUE && tempTenths > 0) {
+        "，手机温度 %.1f℃".format(Locale.CHINA, tempTenths / 10f)
+    } else {
+        ""
+    }
+    return "手机电量：$level%，$state$temperature"
 }
 
 private fun recentAppsLine(context: Context, setting: DeviceContextSetting): String? {

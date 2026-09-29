@@ -40,6 +40,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -161,12 +162,24 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                 )
             }
 
-            1 -> ASRProviderList(
-                settings = settings,
-                onUpdateSettings = vm::updateSettings,
-                onEdit = { editingASRProvider = it },
-                modifier = Modifier.padding(innerPadding)
-            )
+            1 -> Column(modifier = Modifier.padding(innerPadding)) {
+                VoiceTranscribeSetting(
+                    enabled = settings.displaySetting.voiceInputTranscribe,
+                    onToggle = { enabled ->
+                        vm.updateSettings(
+                            settings.copy(
+                                displaySetting = settings.displaySetting.copy(voiceInputTranscribe = enabled)
+                            )
+                        )
+                    },
+                )
+                ASRProviderList(
+                    settings = settings,
+                    onUpdateSettings = vm::updateSettings,
+                    onEdit = { editingASRProvider = it },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 
@@ -328,10 +341,12 @@ private fun AIVoiceReplySetting(
             )
             Spacer(modifier = Modifier.padding(top = 4.dp))
             val off = stringResource(R.string.setting_speech_ai_voice_off)
+            val auto = stringResource(R.string.setting_speech_ai_voice_auto)
             val textAndVoice = stringResource(R.string.setting_speech_ai_voice_text_voice)
             val voiceOnly = stringResource(R.string.setting_speech_ai_voice_voice_only)
             listOf(
                 "off" to off,
+                "auto" to auto,
                 "text_and_voice" to textAndVoice,
                 "voice_only" to voiceOnly,
             ).forEach { (value, label) ->
@@ -349,6 +364,45 @@ private fun AIVoiceReplySetting(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun VoiceTranscribeSetting(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = CustomColors.cardColorsOnSurfaceContainer.containerColor,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.setting_speech_voice_transcribe_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = stringResource(R.string.setting_speech_voice_transcribe_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalContentColor.current.copy(alpha = 0.6f),
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+            )
         }
     }
 }
