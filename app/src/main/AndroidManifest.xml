@@ -36,6 +36,11 @@
     android:name="android.permission.QUERY_ALL_PACKAGES"
     tools:ignore="QueryAllPackagesPermission" />
 
+  <!-- 小米/红米（HyperOS）在 QUERY_ALL_PACKAGES 之上额外管控的
+    「读取应用列表」权限：不声明+运行时授予的话，getInstalledApplications
+    只能返回自己，AI/手动按名字找应用都会"找不到" -->
+  <uses-permission android:name="com.android.permission.GET_INSTALLED_APPS" />
+
   <uses-feature
     android:name="android.hardware.camera"
     android:required="false" />

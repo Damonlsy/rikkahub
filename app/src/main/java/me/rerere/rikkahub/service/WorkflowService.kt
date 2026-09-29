@@ -9,8 +9,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.ai.tools.isProtectedName
-import me.rerere.rikkahub.data.ai.tools.isProtectedPackage
 import me.rerere.rikkahub.data.ai.tools.resolvePackage
 import me.rerere.rikkahub.data.applock.AppLockStore
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -183,9 +181,9 @@ class WorkflowService(
         val locked = mutableListOf<String>()
         locks.forEach { request ->
             val name = request.app.trim()
-            if (name.isBlank() || isProtectedName(name)) return@forEach
+            if (name.isBlank()) return@forEach
             val pkg = resolvePackage(context, name) ?: return@forEach
-            if (isProtectedPackage(pkg)) return@forEach
+            if (appLockStore.isProtected(pkg)) return@forEach
             // 代码层强制阈值：模型输出只是建议，没到阈值的一律不锁；
             // 今天的数据里查不到这个包（没用过/没授权）也视为没到阈值
             val minutes = usage.find { it.packageName == pkg }?.minutes ?: 0L
@@ -234,8 +232,8 @@ class WorkflowService(
     ): String {
         val assistantName = assistant.name.ifBlank { "AI" }
         val usageLines = usage.joinToString("\n") { item ->
-            val tag = if (isProtectedName(item.appName) || isProtectedPackage(item.packageName)) {
-                "（白名单）"
+            val tag = if (appLockStore.isProtected(item.packageName)) {
+                "（受保护）"
             } else {
                 ""
             }

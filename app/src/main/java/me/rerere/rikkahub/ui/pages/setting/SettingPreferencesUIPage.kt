@@ -209,7 +209,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                     item(
                         headlineContent = { Text("应用锁") },
                         supportingContent = {
-                            Text("开启后 AI 可以锁定白名单里的应用（微信、学习通、支付宝、完美校园、胖乖生活、到梦空间、百度网盘）。需要在系统设置里授权「无障碍」服务。")
+                            Text("开启无障碍后，被锁定的应用一打开就会被拦截。锁定列表和受保护清单请在 设置 → 应用锁 里管理（可手动锁，也可让 AI 锁）。")
                         },
                         trailingContent = {
                             Switch(

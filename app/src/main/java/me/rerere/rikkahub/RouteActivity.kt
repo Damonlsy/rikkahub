@@ -126,6 +126,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSearchDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
 import me.rerere.rikkahub.ui.pages.setting.SettingStickerPatPage
+import me.rerere.rikkahub.ui.pages.setting.AppLockPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDeviceContextPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.WorkflowSettingPage
@@ -545,6 +546,10 @@ class RouteActivity : ComponentActivity() {
                                 WorkflowSettingPage(onBack = { nav.popBackStack() })
                             }
 
+                            entry<Screen.AppLock> {
+                                AppLockPage()
+                            }
+
                             entry<Screen.Debug> {
                                 DebugPage()
                             }
@@ -793,6 +798,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Workflow : Screen
+
+    @Serializable
+    data object AppLock : Screen
 
     @Serializable
     data object Debug : Screen

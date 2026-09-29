@@ -194,14 +194,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_preferences)) },
                     )
                     item(
-                        onClick = { openAccessibilitySettings(context) },
+                        onClick = { navController.navigate(Screen.AppLock) },
                         leadingContent = { Icon(Lucide.Lock, null) },
                         supportingContent = {
                             Text(
                                 if (isAppLockServiceEnabled(context)) {
-                                    "已开启：AI 可以锁定应用（受保护白名单除外）"
+                                    "已开启：在这里锁定/解锁应用、管理受保护清单"
                                 } else {
-                                    "点这里去系统无障碍里授权，授权后 AI 才能锁定应用"
+                                    "锁定、解锁、受保护清单都在这里管理；拦截需先开无障碍"
                                 }
                             )
                         },

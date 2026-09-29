@@ -15,19 +15,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.applock.AppLockStore
 
 /**
- * 受保护白名单：这些应用**永远不允许被锁**（防止把关键 App 锁死）。
+ * 已知应用的包名（优先用这个，避免同名误匹配）
  */
-internal val APP_LOCK_PROTECTED = listOf(
-    "微信",
-    "学习通",
-    "支付宝",
-    "完美校园",
-    "胖乖生活",
-    "到梦空间",
-    "百度网盘",
-)
-
-/** 已知应用的包名（优先用这个，避免同名误匹配） */
 private val KNOWN_PACKAGES = mapOf(
     "微信" to "com.tencent.mm",
     "学习通" to "com.chaoxing.mobile",
@@ -35,12 +24,6 @@ private val KNOWN_PACKAGES = mapOf(
     "完美校园" to "com.newcapec.mobile.ncp",
     "百度网盘" to "com.baidu.netdisk",
 )
-
-internal fun isProtectedName(name: String): Boolean =
-    APP_LOCK_PROTECTED.any { it == name.trim() }
-
-internal fun isProtectedPackage(pkg: String): Boolean =
-    KNOWN_PACKAGES.values.any { it == pkg }
 
 internal fun resolvePackage(context: Context, name: String): String? {
     val key = name.trim()
@@ -64,9 +47,9 @@ fun buildAppLockTools(context: Context, store: AppLockStore, assistantName: Stri
             - lock：锁定应用，需要 apps（应用名数组，例如 ["抖音","哔哩哔哩"]）和 note（锁定备注，必填）
             - unlock：解锁应用，需要 apps
             - list：查看当前已锁定的应用
-            - protected：查看受保护白名单（这些应用**永远不允许锁**）
+            - protected：查看受保护应用（用户设置的、永远不允许锁的清单）
             注意：
-            1. 白名单里的应用是受保护的，锁不了（调用 lock 会被拒绝）。白名单：${APP_LOCK_PROTECTED.joinToString("、")}。
+            1. 受保护清单由用户在「设置 → 应用锁」里自定义，随时可能变化——锁之前用 protected 查询最新清单，不要凭记忆判断。受保护的应用调用 lock 会被拒绝。
             2. lock 必须写 note——写一句给用户看的备注，说明为什么锁它，比如“先把作业写完”“该睡觉了”。内容由你决定，不要空着。
             应用名用中文名即可（会自动匹配已安装的应用）。锁定是否生效取决于用户有没有开启无障碍服务。
         """.trimIndent(),
@@ -109,8 +92,21 @@ fun buildAppLockTools(context: Context, store: AppLockStore, assistantName: Stri
             val note = params["note"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
 
             val payload = when (action) {
-                "protected" -> buildJsonObject {
-                    put("protected", buildJsonArray { APP_LOCK_PROTECTED.forEach { add(it) } })
+                "protected" -> {
+                    val pm = context.packageManager
+                    buildJsonObject {
+                        put("protected", buildJsonArray {
+                            store.protectedPackages().forEach { pkg ->
+                                val label = runCatching {
+                                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                                }.getOrNull() ?: pkg
+                                add(buildJsonObject {
+                                    put("name", label)
+                                    put("package", pkg)
+                                })
+                            }
+                        })
+                    }
                 }
 
                 "list" -> {
@@ -134,30 +130,25 @@ fun buildAppLockTools(context: Context, store: AppLockStore, assistantName: Stri
                 "lock", "unlock" -> {
                     require(apps.isNotEmpty()) { "apps is required" }
                     if (action == "lock") require(note.isNotBlank()) { "note is required for lock" }
+                    val pm = context.packageManager
+                    val scanned = runCatching { pm.getInstalledApplications(0).size }.getOrDefault(0)
                     val results = buildJsonArray {
                         apps.forEach { name ->
-                            if (isProtectedName(name)) {
-                                add(buildJsonObject {
-                                    put("app", name)
-                                    put("ok", false)
-                                    put("reason", "在受保护白名单里，不能锁")
-                                })
-                                return@forEach
-                            }
                             val pkg = resolvePackage(context, name)
                             if (pkg == null) {
                                 add(buildJsonObject {
                                     put("app", name)
                                     put("ok", false)
                                     put("reason", "未安装或找不到")
+                                    put("scannedApps", scanned)
                                 })
                                 return@forEach
                             }
-                            if (action == "lock" && isProtectedPackage(pkg)) {
+                            if (action == "lock" && store.isProtected(pkg)) {
                                 add(buildJsonObject {
                                     put("app", name)
                                     put("ok", false)
-                                    put("reason", "在受保护白名单里，不能锁")
+                                    put("reason", "用户把它设为受保护应用，不能锁（用户可在 设置 → 应用锁 里取消保护）")
                                 })
                                 return@forEach
                             }
@@ -169,7 +160,16 @@ fun buildAppLockTools(context: Context, store: AppLockStore, assistantName: Stri
                             })
                         }
                     }
-                    buildJsonObject { put("results", results) }
+                    buildJsonObject {
+                        put("results", results)
+                        // 小米/红米等国产 ROM 单独管控「读取应用列表」权限：没授权时几乎扫不到任何应用
+                        if (scanned <= 10) {
+                            put(
+                                "hint",
+                                "系统没有授予「读取应用列表」权限，读不到已安装的应用（小米/红米：手机设置 → 应用信息 → Damonlsy → 权限 → 读取应用列表 → 允许；或在 app 的 设置 → 应用锁 里重新申请）",
+                            )
+                        }
+                    }
                 }
 
                 else -> error("unknown action: $action")
