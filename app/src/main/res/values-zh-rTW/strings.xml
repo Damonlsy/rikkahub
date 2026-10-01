@@ -1076,6 +1076,7 @@
   <string name="update_card_downloading">正在下載，請查看狀態列以瞭解進度</string>
   <string name="update_card_new_version_found">發現新版本 %s</string>
   <string name="update_card_unknown_error">未知錯誤</string>
+  <string name="update_download_failed">更新包下載失敗，已為你在瀏覽器開啟下載連結</string>
   <string name="upload_file">上傳檔案</string>
   <string name="use_web_search">網路搜尋</string>
   <string name="user_default_name">用戶</string>
