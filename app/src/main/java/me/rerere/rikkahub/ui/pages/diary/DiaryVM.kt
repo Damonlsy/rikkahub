@@ -18,9 +18,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.db.dao.AnniversaryDAO
 import me.rerere.rikkahub.data.db.dao.DiaryDAO
+import me.rerere.rikkahub.data.db.dao.PeriodDAO
+import me.rerere.rikkahub.data.db.entity.AnniversaryEntity
 import me.rerere.rikkahub.data.db.entity.DiaryCommentEntity
 import me.rerere.rikkahub.data.db.entity.DiaryEntity
+import me.rerere.rikkahub.data.db.entity.PeriodRecordEntity
 import me.rerere.rikkahub.service.DiaryService
 
 const val DIARY_AUTHOR_USER = "user"
@@ -35,6 +39,8 @@ class DiaryVM(
     private val dao: DiaryDAO,
     private val service: DiaryService,
     private val context: Context,
+    private val periodDao: PeriodDAO,
+    private val anniversaryDao: AnniversaryDAO,
 ) : ViewModel() {
 
     private val loading = MutableStateFlow(true)
@@ -76,6 +82,48 @@ class DiaryVM(
         )
 
     val aiWorking: StateFlow<Boolean> = aiBusy.asStateFlow()
+
+    val periods: Flow<List<PeriodRecordEntity>> = periodDao.listAll()
+
+    val anniversaries: Flow<List<AnniversaryEntity>> = anniversaryDao.listAll()
+
+    fun addPeriodRecord(date: LocalDate, flow: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = periodDao.getByDate(date.toString())
+            periodDao.upsert(
+                PeriodRecordEntity(
+                    id = existing?.id ?: 0,
+                    date = date.toString(),
+                    flow = flow.coerceIn(1, 3),
+                    note = existing?.note.orEmpty(),
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    fun deletePeriodRecord(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) { periodDao.delete(id) }
+    }
+
+    fun addAnniversary(title: String, date: LocalDate, repeatYearly: Boolean, emoji: String) {
+        if (title.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            anniversaryDao.upsert(
+                AnniversaryEntity(
+                    title = title.trim(),
+                    date = date.toString(),
+                    repeatYearly = repeatYearly,
+                    emoji = emoji.trim(),
+                    createdAt = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
+
+    fun deleteAnniversary(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) { anniversaryDao.delete(id) }
+    }
 
     init {
         // Keep the skeleton visible for a beat on first open so the loading

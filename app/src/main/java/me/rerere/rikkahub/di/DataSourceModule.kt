@@ -106,6 +106,14 @@ val dataSourceModule = module {
     }
 
     single {
+        get<AppDatabase>().periodDao()
+    }
+
+    single {
+        get<AppDatabase>().anniversaryDao()
+    }
+
+    single {
         get<AppDatabase>().ledgerDao()
     }
 
@@ -144,6 +152,7 @@ val dataSourceModule = module {
             conversationRepo = get(),
             appLockStore = get(),
             workflowStore = get(),
+            diaryDao = get(),
         )
     }
 

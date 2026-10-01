@@ -26,6 +26,7 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.StudyRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.utils.STICKER_OWNER_AI
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
 import me.rerere.workspace.WorkspaceShellStatus
 import kotlin.uuid.Uuid
@@ -108,6 +109,12 @@ class ChatToolFactory(
             addAll(buildPatTools(patActionDao, context, sendOutgoing, assistant.name))
             // 表情包：设置里的按钮关掉后 AI 就不能发表情包了
             if (settings.displaySetting.stickerEnabled) {
+                val inventory = stickerDao.getByOwner(STICKER_OWNER_AI).joinToString("\n") { sticker ->
+                    val content = sticker.description.ifBlank {
+                        sticker.name.ifBlank { "（还没识别，用 list 看详情）" }
+                    }
+                    "${sticker.id}｜${sticker.category.ifBlank { "未识别" }}｜$content"
+                }
                 addAll(
                     buildStickerTools(
                         dao = stickerDao,
@@ -116,6 +123,7 @@ class ChatToolFactory(
                         copyForSend = { uri ->
                             filesManager.copyChatFile(uri.toUri())?.toString() ?: uri
                         },
+                        inventory = inventory,
                     )
                 )
             }

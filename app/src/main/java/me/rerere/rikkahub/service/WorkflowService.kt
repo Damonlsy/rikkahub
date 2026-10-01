@@ -16,6 +16,7 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.db.dao.DiaryDAO
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.toMessageNode
@@ -24,8 +25,11 @@ import me.rerere.rikkahub.data.usage.AppUsage
 import me.rerere.rikkahub.data.usage.queryAppUsage
 import me.rerere.rikkahub.data.workflow.WorkflowConfig
 import me.rerere.rikkahub.data.workflow.WorkflowStore
+import me.rerere.rikkahub.utils.fetchWeatherLine
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDateTime
+import kotlin.random.Random
 import kotlin.uuid.Uuid
 
 private const val TAG = "WorkflowService"
@@ -49,6 +53,7 @@ class WorkflowService(
     private val conversationRepo: ConversationRepository,
     private val appLockStore: AppLockStore,
     private val workflowStore: WorkflowStore,
+    private val diaryDao: DiaryDAO,
 ) {
     data class Outcome(
         val assistantName: String,
@@ -78,9 +83,15 @@ class WorkflowService(
 
         val usage = queryAppUsage(context, start, now, top = 30)
         val screenText = AppLockAccessibilityService.captureScreenText()?.take(3000).orEmpty()
-        Log.i(TAG, "runOnce: assistant=${assistant.name} usage=${usage.size} screenLen=${screenText.length}")
+        val weather = fetchWeatherLine(context)
+        val diary = recentDiaryLine()
+        Log.i(
+            TAG,
+            "runOnce: assistant=${assistant.name} usage=${usage.size} " +
+                "screenLen=${screenText.length} weather=${weather != null} diary=${diary != null}"
+        )
 
-        val prompt = buildPrompt(assistant, config, usage, screenText)
+        val prompt = buildPrompt(assistant, config, usage, screenText, weather, diary)
         var parsed: Parsed? = null
         var attempt = 0
         while (parsed == null && attempt < 2) {
@@ -224,11 +235,24 @@ class WorkflowService(
         }.getOrNull()
     }
 
+    private suspend fun recentDiaryLine(): String? = runCatching {
+        val diaries = diaryDao.getAllDiaries().take(3)
+        if (diaries.isEmpty()) return@runCatching null
+        diaries.joinToString("\n") { d ->
+            val content = d.content.replace("\n", " ").trim().take(150)
+            "- ${d.date}《${d.title}》：$content"
+        }
+    }.onFailure {
+        Log.e(TAG, "recentDiaryLine failed", it)
+    }.getOrNull()
+
     private fun buildPrompt(
         assistant: Assistant,
         config: WorkflowConfig,
         usage: List<AppUsage>,
         screenText: String,
+        weather: String?,
+        diary: String?,
     ): String {
         val assistantName = assistant.name.ifBlank { "AI" }
         val usageLines = usage.joinToString("\n") { item ->
@@ -240,9 +264,34 @@ class WorkflowService(
             "- ${item.appName}$tag：约 ${item.minutes} 分钟"
         }.ifBlank { "（没有拿到使用时长数据，可能未授权「使用情况访问」）" }
 
+        val now = LocalDateTime.now()
+        val dayPart = when (now.hour) {
+            in 5..10 -> "早上"
+            in 11..13 -> "中午"
+            in 14..17 -> "下午"
+            in 18..22 -> "晚上"
+            else -> "深夜"
+        }
+        val weekDay = now.dayOfWeek.toString().lowercase().replaceFirstChar { it.uppercase() }
+        val topics = listOf(
+            "今天吃到的最好吃的东西",
+            "最近单曲循环的一首歌",
+            "路上看到的有趣画面",
+            "小时候的一个怪癖",
+            "如果明天突然放假，最想干什么",
+            "最近一次笑出声是因为什么",
+            "一个想买但一直没买的东西",
+            "昨晚做的梦（如果还记得）",
+            "最近觉得最好看的一部剧或漫画",
+            "周末想去的一个地方",
+        )
+        val topic = topics[Random.nextInt(topics.size)]
+
         val base = """
-            你是「$assistantName」。系统按固定间隔自动触发了一次定时查岗，不是用户主动找你聊天。
-            下面是你刚刚查到的信息：
+            你是「$assistantName」。系统按固定间隔自动触发了一次主动联系——不是用户开口找你，
+            是你主动给用户发一句话。此刻你查到的所有信息：
+
+            【现在】$dayPart ${now.hour}:${now.minute.toString().padStart(2, '0')}（$weekDay）
 
             【今天 00:00 到现在的应用使用时长排行榜】
             $usageLines
@@ -250,15 +299,21 @@ class WorkflowService(
             【用户此刻屏幕上显示的内容（可能为空或很零碎）】
             ${screenText.ifBlank { "（读不到，可能没开无障碍或当前页面是图片/视频）" }}
 
+            【天气】${weather ?: "（拿不到，别提天气）"}
+
+            【用户最近写的日记】
+            ${diary ?: "（没有日记或读不到，别提日记）"}
+
             【白名单外应用使用阈值】${config.thresholdMinutes} 分钟
 
             要求：
-            1. 这条消息写什么完全由你自己决定：用你的性格、你和用户此刻的关系、上面查到的真实情况，
-               自己决定要不要提这些数据、提多少。想说什么就说什么——关心、吐槽、撒娇、质问、提醒、
-               分享你的一件小事，甚至不接茬都可以；不要套固定格式，也不要假装是用户先开的口。
+            1. 这一轮说什么、发不发，完全由你自己决定：可以是查岗式的关心、吐槽、质问、提醒，
+               也可以凭时间、天气、日记里的事或者话头灵感「$topic」自然闲聊开场，或者什么都不提。
+               用你的性格、你和用户此刻的关系说话，别汇报数据、别写成播报、别每句都问"在干嘛"、
+               别假装是用户先开的口。就一段口语化的话，20～80 字。
             2. 如果发现白名单外的 App 使用时长超过了阈值，你可以决定锁定它来"惩罚"用户（结合应用锁）。锁哪个、锁几个、备注写什么，都由你决定；没超阈值就返回空数组，不要乱锁。
             3. 严格只输出一个 JSON 对象，不要有任何多余文字或代码块标记，格式：
-            {"send":true,"message":"给用户看的那条消息","lock":[{"app":"应用名","note":"给用户看的锁定备注"}]}
+               {"send":true,"message":"给用户看的那条消息","lock":[{"app":"应用名","note":"给用户看的锁定备注"}]}
             4. 白名单里的应用永远不要锁。
             5. 这是系统自动触发的定时任务，你**不要调用任何工具**、不要输出思考过程、不要执行命令，只直接给出那一个 JSON。
         """.trimIndent()

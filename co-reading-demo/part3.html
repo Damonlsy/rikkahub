@@ -1,0 +1,471 @@
+
+/* ---------- 分页引擎 ---------- */
+const SENT_RE=/[^。！？；…]+[。！？；…]+[”』」）)]*|[^。！？；…]+/g;
+function paginate(ch){
+  if(ch._pages)return ch._pages;
+  const probe=document.createElement("div");
+  probe.className="page measuring";
+  probe.innerHTML='<div class="inner"><div class="body"></div></div>';
+  $("#stage").appendChild(probe);
+  const body=probe.querySelector(".body");
+  const avail=()=>{const h=probe.clientHeight-34-84;return h>50?h:600};
+  const segs=[];
+  (ch.paras||[]).forEach((p,oi)=>{
+    (p.match(SENT_RE)||[p]).forEach(s=>{s=s.trim();if(s)segs.push({oi:oi,text:s})});
+  });
+  const segHtml=(list,first)=>{
+    let h=first?`<h2>${esc(ch.title)}</h2><div class="rule">· · ·</div>`:"";
+    let prev=null;
+    list.forEach(sg=>{
+      if(sg.oi!==prev){if(prev!==null)h+="</div>";h+=`<div class="para" data-oi="${sg.oi}">`;prev=sg.oi}
+      h+=esc(sg.text);
+    });
+    if(prev!==null)h+="</div>";
+    return h;
+  };
+  const pages=[];let i=0;
+  while(i<segs.length){
+    const list=[];let ovf=null;
+    while(i<segs.length){
+      list.push(segs[i]);
+      body.innerHTML=segHtml(list,pages.length===0);
+      if(body.scrollHeight>avail()){ovf=list.pop();break}
+      i++;
+    }
+    if(list.length===0&&ovf){
+      if(ovf.text.length<=1){pages.push({segs:[ovf]});i++;continue}
+      const mid=Math.ceil(ovf.text.length/2);
+      segs.splice(i,0,{oi:ovf.oi,text:ovf.text.slice(0,mid)},{oi:ovf.oi,text:ovf.text.slice(mid)});
+      continue;
+    }
+    if(list.length)pages.push({segs:list});
+    else break;
+  }
+  probe.remove();
+  ch._pages=pages.length?pages:[{segs:[]}];
+  return ch._pages;
+}
+function pageRatio(){return state.charsPerPage||620}
+function estPages(ch){
+  if(ch._pages)return ch._pages.length;
+  if(ch._est==null){
+    const chars=(ch.paras||[]).join("").length;
+    ch._est=Math.max(1,Math.ceil(chars/pageRatio())+1);
+  }
+  return ch._est;
+}
+function pagesBefore(){return curBook().chapters.slice(0,state.chap).reduce((n,ch)=>n+estPages(ch),0)}
+function totalPages(){return curBook().chapters.reduce((n,ch)=>n+estPages(ch),0)}
+function ensurePages(){
+  state.pages=paginate(curChap());
+  const ch=curChap();
+  const chars=(ch.paras||[]).join("").length;
+  if(state.pages.length>0&&chars>0){state.charsPerPage=chars/state.pages.length;ch._est=state.pages.length}
+}
+function jumpTo(chIdx,pageInCh){
+  state.chap=chIdx;ensurePages();
+  state.page=Math.max(0,Math.min(pageInCh||0,state.pages.length-1));
+  paintPage(0);renderToc();
+}
+
+/* ---------- 纸条 ---------- */
+function noteHtml(oi){
+  const k=`${state.book}-${state.chap}-${oi}`;
+  const mn=state.notes[k];
+  return mn?`<div class="mnote me" data-k="${k}">${esc(mn)}</div>`:"";
+}
+function buildPageHtml(){
+  const ch=curChap(),pg=state.pages[state.page];
+  let h=state.page===0?`<h2>${esc(ch.title)}</h2><div class="rule">· · ·</div>`:"";
+  let prev=null;
+  const close=oi=>`<button class="addnote" data-oi="${oi}" title="写纸条">＋</button>${noteHtml(oi)}</div>`;
+  (pg?pg.segs:[]).forEach(sg=>{
+    if(sg.oi!==prev){if(prev!==null)h+=close(prev);h+=`<div class="para" data-oi="${sg.oi}">`;prev=sg.oi}
+    h+=esc(sg.text);
+  });
+  if(prev!==null)h+=close(prev);
+  return `<div class="inner">${h}</div>`;
+}
+function scheduleNotes(){
+  state.noteTimers.forEach(clearTimeout);state.noteTimers=[];
+  Object.keys(AI_NOTES).forEach(k=>{
+    const[b,c,oi]=k.split("-").map(Number);
+    if(b!==state.book||c!==state.chap)return;
+    const t=setTimeout(()=>{
+      if($('#pageEl .mnote.ai[data-k="'+k+'"]'))return;
+      const para=$('#pageEl .para[data-oi="'+oi+'"]');
+      if(!para)return;
+      const d=document.createElement("div");d.className="mnote ai";d.dataset.k=k;
+      d.textContent=AI_NOTES[k][0];
+      const st=document.createElement("span");st.className="favstar";st.textContent="★";
+      st.onclick=ev=>{ev.stopPropagation();addFav(AI_NOTES[k][0],`《${curBook().title}》· ${curChap().title}`);st.classList.add("on")};
+      d.appendChild(st);
+      d.onclick=()=>askAboutNote(k);
+      para.appendChild(d);
+    },1600+Math.min(oi,6)*1100);
+    state.noteTimers.push(t);
+  });
+}
+function askAboutNote(k){
+  const arr=AI_NOTES[k]||[];
+  toggleChat(true);
+  const el=pushMsg("ai",arr.map(x=>esc(x)).join("<br><br>"));
+  addStarTo(el,arr.join("  "),`《${curBook().title}》· AI 书评`);
+}
+document.addEventListener("click",e=>{
+  const btn=e.target.closest(".addnote");
+  if(btn){
+    const oi=Number(btn.dataset.oi);
+    const k=`${state.book}-${state.chap}-${oi}`;
+    const txt=prompt("写一张纸条贴在页边：",state.notes[k]||"");
+    if(txt!=null){
+      if(txt.trim())state.notes[k]=txt.trim();else delete state.notes[k];
+      localStorage.setItem("cr_notes",JSON.stringify(state.notes));paintPage(0);
+    }
+    return;
+  }
+  const mn=e.target.closest(".mnote.ai");
+  if(mn)askAboutNote(mn.dataset.k);
+  const mm=$("#moreMenu");
+  if(mm.classList.contains("open")&&!e.target.closest("#moreMenu")&&!e.target.closest("#moreBtn"))
+    mm.classList.remove("open");
+});
+
+/* ---------- 翻页（纸感） ---------- */
+function paintPage(dir){
+  const el=$("#pageEl");
+  if(dir){
+    const ghost=el.cloneNode(true);ghost.id="";ghost.classList.add("ghost");
+    $("#stage").appendChild(ghost);
+    ghost.style.transition="none";ghost.style.transform="rotateY(0deg)";
+    ghost.style.transformOrigin=dir>0?"left center":"right center";
+    requestAnimationFrame(()=>{
+      ghost.classList.add("flip");
+      ghost.style.transition="transform .78s cubic-bezier(.42,.08,.36,1)";
+      ghost.style.transform=`rotateY(${dir>0?-104:104}deg)`;
+    });
+    setTimeout(()=>ghost.remove(),830);
+  }
+  el.innerHTML=buildPageHtml();
+  el.style.transition="none";
+  el.style.transform=`rotateY(${dir>0?100:-100}deg)`;
+  el.style.opacity=dir?".5":"1";
+  requestAnimationFrame(()=>{
+    el.style.transition="transform .78s cubic-bezier(.42,.08,.36,1),opacity .5s";
+    el.style.transform="rotateY(0deg)";el.style.opacity="1";
+  });
+  el.onclick=ev=>{
+    if(ev.target.closest(".mnote")||ev.target.closest(".addnote")||ev.target.closest(".favstar"))return;
+    const r=el.getBoundingClientRect(),x=ev.clientX-r.left;
+    if(x<r.width*.3)turn(-1);else if(x>r.width*.7)turn(1);
+  };
+  const t=totalPages(),g=pagesBefore()+state.page+1;
+  $("#pageNum").textContent=`第 ${g} / ${t} 页`;
+  const dots=$("#pDots");dots.innerHTML="";
+  const n=Math.min(t,9);
+  const on=Math.round(state.page/Math.max(1,state.pages.length-1)*(n-1));
+  for(let i=0;i<n;i++){
+    const d=document.createElement("span");d.className="pdot"+(i===on?" on":"");dots.appendChild(d);
+  }
+  const pct=Math.round(g/t*100);
+  $("#progBar").style.width=pct+"%";$("#progTxt").textContent=pct+"%";
+  $("#chapName").textContent=curChap().title;
+  scheduleNotes();
+  savePos();
+  appReportProgress();
+}
+function turn(d){
+  if(state.busy)return;
+  if(d>0){
+    if(state.page+1<state.pages.length){state.page++;paintPage(1)}
+    else if(state.chap+1<curBook().chapters.length)nextChapter();
+    else toast("这一卷读完了 ❧");
+  }else{
+    if(state.page>0){state.page--;paintPage(-1)}
+    else if(state.chap>0)prevChapter();
+    else toast("已经是第一页了");
+  }
+}
+function nextChapter(){
+  state.chap++;ensurePages();state.page=0;
+  paintPage(1);renderToc();closeToc();
+}
+function prevChapter(){
+  state.chap--;ensurePages();state.page=state.pages.length-1;
+  paintPage(-1);renderToc();closeToc();
+}
+
+/* ---------- 目录 / 进度 ---------- */
+function renderToc(){
+  $("#tocList").innerHTML=curBook().chapters.map((ch,i)=>
+    `<div class="item ${i===state.chap?"cur":""}" onclick="jumpTo(${i});closeToc()">${esc(ch.title)}
+      <small>${estPages(ch)} 页</small></div>`).join("");
+}
+function toggleToc(){$("#toc").classList.toggle("open")}
+function closeToc(){$("#toc").classList.remove("open")}
+function toggleMore(){$("#moreMenu").classList.toggle("open")}
+function savePos(){
+  let pos={};try{pos=JSON.parse(localStorage.getItem("cr_pos")||"{}")}catch(e){}
+  const t=totalPages(),g=pagesBefore()+state.page+1;
+  pos[state.book]={ch:state.chap,page:state.page,pct:Math.round(g/t*100)};
+  localStorage.setItem("cr_pos",JSON.stringify(pos));
+  localStorage.setItem("cr_last",state.book);
+}
+function resumeBook(){grabBook(Number(localStorage.getItem("cr_last")||0))}
+
+/* ---------- 阅读器入口/出口 ---------- */
+function enterReader(){
+  $("#shelf").style.display="none";$("#reader").hidden=false;$("#chatFab").style.display="flex";
+  renderPhotos();
+  ensurePages();
+  state.page=Math.max(0,Math.min(state.page,state.pages.length-1));
+  state.startMs=Date.now();
+  $("#chatSub").textContent=`《${curBook().title}》· 助手与模型设置复用 App`;
+  appBoot();
+  appReportProgress();
+  clearInterval(state.tick);
+  state.tick=setInterval(()=>{
+    if($("#reader").hidden)return;
+    const s=Math.floor((Date.now()-state.startMs)/1000);
+    const p=n=>String(n).padStart(2,"0");
+    $("#timeChip").textContent=p(Math.floor(s/60))+":"+p(s%60);
+  },1000);
+  paintPage(0);renderToc();
+}
+function backToShelf(){
+  state.totalMs+=Date.now()-state.startMs;localStorage.setItem("cr_total",state.totalMs);
+  clearInterval(state.tick);
+  $("#reader").hidden=true;$("#shelf").style.display="";$("#chatFab").style.display="none";
+  $("#chat").classList.remove("open");$("#toc").classList.remove("open");
+  $("#moreMenu").classList.remove("open");
+  renderShelf();
+}
+function openFinale(){
+  const used=Date.now()-state.startMs;
+  $("#fThis").textContent=Math.max(1,Math.round(used/60000))+" 分 "+Math.round(used%60000/1000)+" 秒";
+  $("#fTotal").textContent=Math.round((state.totalMs+used)/60000)+" 分";
+  $("#fWhere").textContent=curChap().title+" 第 "+(state.page+1)+" 页";
+  $("#fChat").textContent=state.chatCount+" 句";
+  $("#fLine").textContent=FINALE[state.book]||FINALE[0];
+  $("#finale").classList.add("open");
+}
+
+/* ---------- 聊天（助手） ---------- */
+/* ---- App 模式（RikkaHub 桥 window.Coreading）---- */
+const APP=!!window.Coreading;
+let appReady=false,appStateGen=false,appSig="",appPoll=null,appCtxTimer=null,appBootDone=false;
+function appJson(s){try{return JSON.parse(s)}catch(e){return{error:"解析失败 "+e.message}}}
+function renderAppMessages(st){
+  const sig=JSON.stringify([st.isGenerating,st.messages]);
+  if(sig===appSig)return;
+  appSig=sig;
+  const box=$("#msgs");box.innerHTML="";
+  st.messages.forEach(m=>{
+    const el=document.createElement("div");
+    el.className="msg "+(m.role==="user"?"me":"ai");
+    el.innerHTML=esc(m.text).replace(/\n/g,"<br>");
+    box.appendChild(el);
+  });
+  if(st.isGenerating){
+    const d=document.createElement("div");d.className="msg ai";d.id="genDot";
+    d.textContent="正在写…";box.appendChild(d);
+  }
+  box.scrollTop=1e9;
+  $("#sendBtn").textContent=st.isGenerating?"■":"➤";
+}
+function appPollOnce(){
+  if(!APP||!appReady)return;
+  const r=appJson(window.Coreading.poll());
+  if(r.error)return;
+  appStateGen=!!r.isGenerating;
+  renderAppMessages(r);
+}
+function appStartPoll(){clearInterval(appPoll);appPoll=setInterval(appPollOnce,400)}
+function appBoot(){
+  if(!APP||appBootDone)return;
+  appBootDone=true;
+  const r=appJson(window.Coreading.bootstrap());
+  if(r.error){toast("连接 App 助手失败："+r.error);appBootDone=false;return}
+  appReady=true;
+  $("#chatName").textContent=r.assistantName||"你的助手";
+  $("#chatSub").textContent="《"+curBook().title+"》· 与"+(r.assistantName||"助手")+"共读";
+  renderAppMessages(r.state);
+  appStateGen=!!(r.state&&r.state.isGenerating);
+  appStartPoll();
+}
+function appSend(text){
+  const r=appJson(window.Coreading.send(text));
+  if(r.error){pushMsg("ai",esc("发送失败："+r.error));return}
+  appPollOnce();
+}
+function appReportProgress(){
+  if(!APP||!appReady)return;
+  clearTimeout(appCtxTimer);
+  appCtxTimer=setTimeout(()=>{
+    if(!appReady)return;
+    const b=curBook(),c=curChap();
+    const g=pagesBefore()+state.page+1;
+    window.Coreading.setReadingContext(JSON.stringify({
+      book:b.title,author:b.author||"",chapter:c.title,page:String(g)
+    }));
+  },600);
+}
+function toggleChat(open){$("#chat").classList.toggle("open",open)}
+function pushMsg(role,html){
+  const el=document.createElement("div");el.className="msg "+role;el.innerHTML=html;
+  $("#msgs").appendChild(el);$("#msgs").scrollTop=1e9;return el;
+}
+function addStarTo(el,text,src){
+  if(el.querySelector(".msgfav"))return;
+  const st=document.createElement("span");st.className="msgfav";st.textContent="★";
+  st.onclick=()=>{addFav(text,src);st.classList.add("on")};
+  el.appendChild(st);
+}
+function sendMsg(preset,selected){
+  toggleChat(true);
+  if(preset==null){
+    const v=$("#input").value.trim();if(!v)return;
+    $("#input").value="";pushMsg("me",esc(v));state.chatCount++;
+    streamAPI(APP?null:state.ctx,v);
+  }else{
+    pushMsg("me",esc(preset+(selected?"《"+selected.slice(0,30)+"》":"")));
+    state.chatCount++;
+    streamAPI(selected,preset);
+  }
+}
+function send(){if(sendStop())return;sendMsg(null,null)}
+function sendStop(){if(APP&&appStateGen){window.Coreading.stop();setTimeout(appPollOnce,120);return true}return false}
+$("#input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});
+function selAction(kind){
+  const sel=window.getSelection().toString().trim();
+  if(!sel){toast("先在书页上选中一句话");return}
+  $("#selBar").style.display="none";
+  state.ctx=sel;
+  const box=$("#chatCtx");box.style.display="block";
+  box.textContent="已选：“"+sel.slice(0,46)+(sel.length>46?"…":"")+"”";
+  const label=kind==="translate"?"翻译成白话":kind==="ask"?"追问":"讲解";
+  sendMsg(label,sel);
+}
+document.addEventListener("mouseup",e=>{
+  if($("#reader").hidden)return;
+  if(e.target.closest("#selBar"))return;
+  const sel=window.getSelection();
+  if(!sel||!sel.toString().trim()){$("#selBar").style.display="none";return}
+  const r=sel.getRangeAt(0).getBoundingClientRect();
+  if(!r.width){$("#selBar").style.display="none";return}
+  const app=$("#reader").getBoundingClientRect();
+  const bar=$("#selBar");bar.style.display="flex";
+  bar.style.left=Math.max(8,Math.min(app.width-240,r.left-app.left+r.width/2-115))+"px";
+  bar.style.top=Math.max(8,r.top-app.top-52)+"px";
+});
+function demoReply(sel,q){
+  const T=s=>s&&q.includes(s);
+  if(T("行刑队")||T("多年以后"))return "这句是全书的钥匙——把未来、现在、过去压成一口气，读完你会发现它在结尾又响了一次。";
+  if(T("冰块"))return "马尔克斯写'见识冰块'像写神迹：新奇被当成神话叙述，马孔多的天真从这块冰开始。";
+  if(T("羊皮卷"))return "羊皮卷是布恩迪亚家的判决书也是唯一的读者——家族史被写下、被预言、最后被飓风抹去。";
+  if(T("香蕉公司"))return "香蕉公司屠杀那章，历史被公开改写成'什么也没发生'——集体失忆是本书最冷的地方。";
+  if(T("达西"))return "达西的傲慢是报价单式的：他把伊丽莎白的家世全念了一遍，也把自己的体面全部念碎了。";
+  if(T("舞会"))return "舞会是奥斯丁的战场：谁先开口、谁坐得住、谁请第二次，全都有价格。";
+  if(T("班纳特"))return "班纳特太太的吵闹是婚姻市场的行情播报——她越失态，奥斯丁的反讽越准。";
+  if(T("反讽")||T("真理"))return "开篇那句'真理'是正话反说的教科书：把偏见抬成公理，再用六十章逐条拆掉。";
+  if(T("当铺"))return "当铺是全书的十字路口：三条命的价钱在那里第一次被摆上台面。";
+  if(T("拉斯柯尔尼科夫"))return "他的'超人理论'把杀人当算术，可索尼娅的信仰是另一套算法——全书的对决其实是两套算式。";
+  if(T("索尼娅"))return "索尼娅读《拉撒路复活》那一段：一个卖身的姑娘念出复活，是全书最亮的一盏灯。";
+  if(sel)return "关于你选的这句——先把字面讲通，再说它为什么被记住：它在上下文里承担了一个转折。换个角度问，会答得更细。";
+  return "这句我读了两遍。你更想听字面的意思，还是它背后那段日子？";
+}
+async function streamAPI(sel,q){
+  if(APP){
+    appSend(sel&&q!==sel?q+"：“"+sel+"”":q);
+    return;
+  }
+  const el=pushMsg("ai","");
+  const src=`《${curBook().title}》· 对话`;
+  if(state.mode!=="api"||!state.api.base){
+    const txt=demoReply(sel,q);
+    let i=0;
+    const t=setInterval(()=>{
+      el.textContent=txt.slice(0,++i);$("#msgs").scrollTop=1e9;
+      if(i>=txt.length){clearInterval(t);addStarTo(el,txt,src)}
+    },26);
+    return;
+  }
+  const book=curBook(),ch=curChap();
+  const sys=`你是用户手机里的 AI 助手「小知」，现在正陪用户读《${book.title}》（${book.author}）的「${ch.title}」。语气亲密、简短、有文学感，像灯下同坐的朋友。${sel?"读者选中：“"+sel+"”":""}`;
+  let full="";
+  try{
+    const resp=await fetch(state.api.base.replace(/\/$/,"")+"/chat/completions",{
+      method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+state.api.key},
+      body:JSON.stringify({model:state.api.model,messages:[{role:"system",content:sys},{role:"user",content:q}],stream:true})
+    });
+    if(!resp.ok){el.textContent="接口返回 "+resp.status+"，检查 Base URL 与 Key。";return}
+    const rd=resp.body.getReader(),dec=new TextDecoder();let buf="",started=false;
+    while(true){
+      const{done,value}=await rd.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split("\n");buf=lines.pop();
+      for(const ln of lines){
+        if(!ln.startsWith("data:"))continue;
+        const d=ln.slice(5).trim();if(d==="[DONE]")continue;
+        try{
+          const j=JSON.parse(d),delta=j.choices&&j.choices[0]&&j.choices[0].delta;
+          if(delta&&delta.content){started=true;full+=delta.content;el.textContent=full;$("#msgs").scrollTop=1e9}
+        }catch(e){}
+      }
+    }
+    if(!started)el.textContent="模型没有返回内容，看看模型名是否正确。";
+    else addStarTo(el,full,src);
+  }catch(e){el.textContent="请求失败："+e.message+"（多为跨域限制，换支持 CORS 的中转）"}
+}
+
+/* ---------- 设置 ---------- */
+function setMode(m){
+  state.mode=m;
+  $("#segDemo").classList.toggle("on",m==="demo");
+  $("#segApi").classList.toggle("on",m==="api");
+  $("#apiFields").style.display=m==="api"?"block":"none";
+}
+function openSettings(){
+  $("#fBase").value=state.api.base;$("#fKey").value=state.api.key;$("#fModel").value=state.api.model;
+  setMode(state.mode);$("#settings").classList.add("open");
+}
+function saveSettings(){
+  state.api.base=$("#fBase").value.trim();state.api.key=$("#fKey").value.trim();state.api.model=$("#fModel").value.trim();
+  localStorage.setItem("cr_base",state.api.base);localStorage.setItem("cr_key",state.api.key);
+  localStorage.setItem("cr_model",state.api.model);localStorage.setItem("cr_mode",state.mode);
+  closeMask("settings");
+  toast(state.mode==="api"?"真实模型已接入，聊两句试试":"演示模式：内置拟真回复");
+  renderShelf();
+}
+
+/* ---------- 启动 ---------- */
+setTheme(localStorage.getItem("cr_theme")||"day");
+renderShelf();
+updateFavLabel();
+document.addEventListener("keydown",e=>{
+  if($("#reader").hidden)return;
+  if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;
+  if(e.key==="ArrowRight")turn(1);
+  if(e.key==="ArrowLeft")turn(-1);
+});
+document.addEventListener("click",e=>{
+  const c=e.target.closest("#themeChipS,#themeChipR");
+  if(c)toggleTheme();
+});
+let touchX=null;
+$("#stage").addEventListener("touchstart",e=>{touchX=e.touches[0].clientX},{passive:true});
+$("#stage").addEventListener("touchend",e=>{
+  if(touchX==null)return;
+  const dx=e.changedTouches[0].clientX-touchX;touchX=null;
+  if(Math.abs(dx)>55)turn(dx<0?1:-1);
+},{passive:true});
+window.addEventListener("resize",()=>{
+  if($("#reader").hidden)return;
+  BOOKS.forEach(b=>b.chapters.forEach(c=>{delete c._pages}));
+  ensurePages();
+  state.page=Math.max(0,Math.min(state.page,state.pages.length-1));
+  paintPage(0);renderToc();
+});
+</script>
+</body>
+</html>

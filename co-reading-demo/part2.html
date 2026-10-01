@@ -1,0 +1,232 @@
+const AI_NOTES={
+ "0-0-0":["开场那句'多年以后'把未来和过去压进同一口气——整本书的时间观在第一句就立住了。","注意'冰块'：马尔克斯把新奇写成神话，这是全书的基本手法。"],
+ "0-0-2":["吉普赛人梅尔基亚德斯带着磁铁和望远镜进村——马孔多的第一次'现代化'，以骗局式的惊奇开场。"],
+ "0-0-4":["失眠症蔓延、记忆要贴标签才留得住——家族的失忆，是整个拉美的寓言。"],
+ "0-1-0":["第二章开篇写阿尔卡蒂奥们的成长：马孔多从传说变成镇子，布恩迪亚家从开拓者变成住户。"],
+ "1-0-0":["开篇第一句就是反讽：'凡是有钱的单身汉，总想娶位太太'——奥斯丁把婚姻市场直接钉成真理。"],
+ "1-0-2":["班纳特先生的冷幽默是全书的减压阀：太太越荒唐，他越冷静，家里的平衡全靠这份懒散。"],
+ "1-0-4":["宾利和达西要来了——奥斯丁的舞会经济学：客厅即市场，谈吐即身价。"],
+ "1-1-0":["第二章推进极快：班纳特先生是全书第一个识破人的人，也是第一个替读者笑出声的人。"],
+ "2-0-0":["七月的热浪从第一页就压着人——整部小说的高压锅，从天气开始。"],
+ "2-0-2":["拉斯柯尔尼科夫住在'棺材'一样的阁楼里：空间先于心理，是穷先把人挤变形的。"],
+ "2-0-4":["去当铺的路上他绕开所有人——孤僻不是性格，是他下一步的燃料。"],
+ "2-1-0":["第二部从病榻开始：梦与现实的边界已经糊了，小说真正的'杀人'是在这里预演的。"]
+};
+const GREETINGS={
+ 0:"多年以后，面对行刑队，奥雷里亚诺上校将会回想起……今晚读《百年孤独》。",
+ 1:"凡是有钱的单身汉，总想娶位太太。——今晚读《傲慢与偏见》。",
+ 2:"七月，天气特别热的时候。——今晚读《罪与罚》。"
+};
+const FINALE=[
+  "羊皮卷上的飓风刚过去。合上书，马孔多还在。",
+  "舞会散了，达西的信还温着。今晚先到这。",
+  "合上书，这个夏天还长得很。下次接着读。"
+];
+
+const state={theme:"day",book:0,chap:0,page:0,pages:[],
+  totalMs:Number(localStorage.getItem("cr_total")||0),startMs:0,
+  mode:localStorage.getItem("cr_mode")||"demo",
+  api:{base:localStorage.getItem("cr_base")||"",key:localStorage.getItem("cr_key")||"",model:localStorage.getItem("cr_model")||""},
+  ctx:null,chatCount:0,notes:{},favs:[],noteTimers:[],busy:false};
+try{state.notes=JSON.parse(localStorage.getItem("cr_notes")||"{}")}catch(e){state.notes={}}
+try{state.favs=JSON.parse(localStorage.getItem("cr_favs")||"[]")}catch(e){state.favs=[]}
+
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const curBook=()=>BOOKS[state.book];
+const curChap=()=>curBook().chapters[state.chap];
+const esc=t=>t.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(t){const el=$("#toast");el.textContent=t;el.classList.add("show");clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),2800)}
+function closeMask(id){$("#"+id).classList.remove("open")}
+function saveFavs(){localStorage.setItem("cr_favs",JSON.stringify(state.favs));updateFavLabel()}
+
+/* ---------- 主题 ---------- */
+function setTheme(t){state.theme=t;document.documentElement.setAttribute("data-theme",t);
+  const label=t==="night"?"☀ 暖昼":"☾ 夜读";
+  $("#themeChipS").textContent=label;$("#themeChipR").textContent=label;
+  localStorage.setItem("cr_theme",t)}
+function toggleTheme(){setTheme(state.theme==="night"?"day":"night")}
+
+/* ---------- 书架 ---------- */
+const DECO_PAL=["#8d7b64","#7a8b7d","#96705c","#6f7a8a","#8a8470","#9c7f7f","#7f7466","#6d8073","#8f8069","#75808d"];
+let decoN=0;
+function decoEl(h,rot,cls,ml,mr){
+  const d=document.createElement("div");
+  d.className="spine deco"+(cls?" "+cls:"");
+  d.style.setProperty("--dc",DECO_PAL[(decoN++)%DECO_PAL.length]);
+  d.style.height=h+"%";
+  if(rot)d.style.setProperty("--rot",rot+"deg");
+  if(ml!=null)d.style.marginLeft=ml+"px";
+  if(mr!=null)d.style.marginRight=mr+"px";
+  return d;
+}
+function renderShelf(){
+  const stack=$("#bookStack"),deco=$("#decoStack");
+  stack.innerHTML="";deco.innerHTML="";decoN=0;
+  let pos={};try{pos=JSON.parse(localStorage.getItem("cr_pos")||"{}")}catch(e){}
+  // 上层：全部直立，整齐对称（用户要求：不要歪）
+  const hts=[97,100,94];
+  const up1=document.createElement("div");up1.className="upgroup";
+  BOOKS.forEach((b,i)=>{
+    const read=pos[i]?pos[i].pct:0;
+    const el=document.createElement("div");
+    el.className="spine c"+(i%4);el.dataset.i=i;
+    el.style.height=hts[i%4]+"%";
+    el.innerHTML=`<span class="vt">${esc(b.title)}</span><span class="va">${esc(b.author)}</span>`
+      +(read?`<span class="pg">${read}%</span>`:"");
+    el.onclick=()=>grabBook(i);
+    up1.appendChild(el);
+  });
+  stack.appendChild(up1);
+  // 下层同规律：全部直立
+  const up2=document.createElement("div");up2.className="upgroup";
+  [88,98,84,93,90].forEach(h=>up2.appendChild(decoEl(h,0)));
+  deco.appendChild(up2);
+  // 底层 props 的藤篮/皮书/兔子为内联 HTML，JS 只需保证书架两层的入场节奏
+  $$("#bookStack .spine,#decoStack .spine").forEach((el,i)=>el.style.animationDelay=(i*.05)+"s");
+  const last=Number(localStorage.getItem("cr_last")||0);
+  const p=pos[last];
+  $("#shelfStats").innerHTML=`共 <b>${BOOKS.length}</b> 本 · 公版/本地书 <i>·</i> 累计 <b>${Math.round(state.totalMs/60000)}</b> 分钟`
+    +(p?` <i>·</i> 上次《${esc(BOOKS[last].title)}》`:"");
+  renderPhotos();
+}
+function renderPhotos(){
+  let saved={};try{saved=JSON.parse(localStorage.getItem("cr_polos")||"{}")}catch(e){}
+  $$(".polaroid").forEach(fig=>{
+    const d=saved[fig.dataset.i];
+    if(d&&d.type==="img")fig.querySelector(".ph").innerHTML=`<img src="${d.src}" alt="">`;
+  });
+}
+
+/* ---------- 取书仪式：抓取 → 封面 → 自动翻开 → 进书 ---------- */
+function grabBook(i){
+  if(state.busy)return;state.busy=true;
+  state.book=i;localStorage.setItem("cr_last",i);
+  let pos={};try{pos=JSON.parse(localStorage.getItem("cr_pos")||"{}")}catch(e){}
+  const p=pos[i];state.chap=p?p.ch:0;state.page=p?p.page:0;
+  const bar=document.querySelector('.spine[data-i="'+i+'"]');
+  const app=$("#app").getBoundingClientRect();
+  const r=bar.getBoundingClientRect();
+  const b=BOOKS[i];
+  const fly=document.createElement("div");fly.className="fly c"+(i%4);
+  fly.style.left=(r.left-app.left)+"px";fly.style.top=(r.top-app.top)+"px";
+  fly.style.width=r.width+"px";fly.style.height=r.height+"px";
+  fly.innerHTML=`
+    <div class="under"><div class="ln"></div><div class="ln"></div><div class="ln"></div>
+      <div class="ln"></div><div class="ln"></div><div class="ln"></div><div class="ln"></div></div>
+    <div class="face c${i%4}">
+      <span class="pd">P.D.</span>
+      <span class="vt">${esc(b.title)}</span>
+      <span class="au">${esc(b.author)}</span>
+    </div>`;
+  fly.querySelector(".under").style.visibility="visible";
+  $("#app").appendChild(fly);
+  const W=180,H=250;
+  requestAnimationFrame(()=>{fly.classList.add("lift")});
+  setTimeout(()=>{
+    fly.style.left=(app.width/2-W/2)+"px";fly.style.top=(app.height/2-H/2-20)+"px";
+    fly.style.width=W+"px";fly.style.height=H+"px";
+  },60);
+  setTimeout(()=>{fly.classList.add("face")},560);
+  setTimeout(()=>{
+    const leaf=document.createElement("div");leaf.className="leaf";
+    const f=fly.querySelector(".face");fly.appendChild(leaf);
+    leaf.appendChild(f);leaf.style.background="var(--parch)";
+    fly.classList.add("open");
+  },1250);
+  setTimeout(()=>{
+    toast(GREETINGS[state.book]);
+    enterReader();
+    fly.classList.add("gone");
+  },2150);
+  setTimeout(()=>{fly.remove();state.busy=false},2650);
+}
+
+/* ---------- 拍立得 / 底图 / 透明度 ---------- */
+let photoTarget=null;
+document.addEventListener("click",e=>{
+  const fig=e.target.closest(".polaroid");
+  if(fig){photoTarget=fig;$("#imgFile").click()}
+});
+$("#bgBtn").onclick=()=>{photoTarget=null;$("#imgFile").click()};
+$("#bgChip").onclick=()=>$("#bgPanel").classList.toggle("open");
+$("#bgClear").onclick=()=>{
+  localStorage.removeItem("cr_bg");$("#shelfImg").hidden=true;$("#shelfImg").removeAttribute("src");toast("底图已清除");
+};
+$("#bgop").oninput=e=>{
+  const v=e.target.value;
+  document.documentElement.style.setProperty("--bgop",v/100);
+  localStorage.setItem("cr_bgop",v);
+};
+(function initBgop(){
+  const v=localStorage.getItem("cr_bgop")||"85";
+  $("#bgop").value=v;
+  document.documentElement.style.setProperty("--bgop",v/100);
+})();
+$("#imgFile").onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const max=1600,s=Math.min(1,max/Math.max(img.width,img.height));
+      const c=document.createElement("canvas");c.width=img.width*s;c.height=img.height*s;
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+      const src=c.toDataURL("image/jpeg",.82);
+      if(photoTarget){
+        let saved={};try{saved=JSON.parse(localStorage.getItem("cr_polos")||"{}")}catch(err){}
+        saved[photoTarget.dataset.i]={type:"img",src};
+        localStorage.setItem("cr_polos",JSON.stringify(saved));
+        photoTarget.querySelector(".ph").innerHTML=`<img src="${src}" alt="">`;
+        toast("照片换好了 📷");
+      }else{
+        localStorage.setItem("cr_bg",src);
+        $("#shelfImg").src=src;$("#shelfImg").hidden=false;
+        $("#bgPanel").classList.add("open");
+        toast("底图换好了，拖动浓度条调一调");
+      }
+    };
+    img.src=r.result;
+  };
+  r.readAsDataURL(f);e.target.value="";
+};
+if(localStorage.getItem("cr_bg")){$("#shelfImg").src=localStorage.getItem("cr_bg");$("#shelfImg").hidden=false}
+
+/* ---------- 导入 TXT ---------- */
+$("#addBtn").onclick=()=>$("#importFile").click();
+$("#importFile").onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const txt=r.result||"";
+    const paras=txt.split(/\r?\n\s*\r?\n+/).map(s=>s.replace(/[ \t]+/g," ").trim()).filter(s=>s.length>1);
+    if(!paras.length){toast("这个文件里没读到正文");return}
+    const title=f.name.replace(/\.txt$/i,"")||"未命名";
+    BOOKS.push({title:title,author:"本地导入",chapters:[{title:"全文",paras:paras}]});
+    renderShelf();
+    toast(`《${title}》已上架 · ${paras.length} 段`);
+  };
+  r.readAsText(f,"utf-8");e.target.value="";
+};
+
+/* ---------- 收藏 ---------- */
+function updateFavLabel(){$("#favBtn").textContent="★ 收藏"+(state.favs.length?" ("+state.favs.length+")":"")}
+function addFav(text,src){
+  text=text.trim();
+  if(!text||state.favs.some(x=>x.text===text)){toast("已经收藏过了");return}
+  state.favs.unshift({text:text,src:src||"",ts:Date.now()});
+  saveFavs();toast("已收藏 ★");
+}
+function openFavs(){
+  const list=$("#favList");
+  if(!state.favs.length){list.innerHTML='<div id="favEmpty">还没有收藏 · 点纸条或书评旁的 ★</div>'}
+  else{
+    list.innerHTML=state.favs.map((x,i)=>
+      `<div class="favItem"><div class="fx">${esc(x.text)}<span class="src">${esc(x.src||"")}</span></div>
+       <button class="del" data-i="${i}">✕</button></div>`).join("");
+    list.querySelectorAll(".del").forEach(b=>b.onclick=()=>{
+      state.favs.splice(Number(b.dataset.i),1);saveFavs();openFavs();
+    });
+  }
+  $("#favs").classList.add("open");
+}
+$("#favBtn").onclick=openFavs;

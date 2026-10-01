@@ -7,4 +7,6 @@
   <color name="teal_700">#FF018786</color>
   <color name="black">#FF000000</color>
   <color name="white">#FFFFFFFF</color>
+  <!-- 开屏/窗口背景：与 Material3 DayNight 静态背景一致，避免冷启动闪色 -->
+  <color name="splash_background">#FFFEF7FF</color>
 </resources>

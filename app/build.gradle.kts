@@ -134,6 +134,17 @@ tasks.register("buildAll") {
     description = "Build both APK and AAB"
 }
 
+// 一起读书（co-reading demo）单源同步：co-reading-demo/ → assets/coreading/
+val syncCoReadingAssets = tasks.register<Copy>("syncCoReadingAssets") {
+    from(rootProject.layout.projectDirectory.dir("co-reading-demo")) {
+        include("index.html")
+        include("assets/oak_horizontal.png")
+        include("assets/oak_vertical.png")
+    }
+    into(layout.projectDirectory.dir("src/main/assets/coreading"))
+}
+tasks.named("preBuild") { dependsOn(syncCoReadingAssets) }
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }

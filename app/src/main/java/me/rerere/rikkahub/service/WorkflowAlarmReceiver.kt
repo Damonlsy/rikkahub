@@ -11,9 +11,11 @@ import org.koin.core.component.inject
 private const val TAG = "WorkflowAlarmRx"
 
 /**
- * Damonlsy fork：精确闹钟到点时触发一次查岗。
+ * Damonlsy fork：精确闹钟到点时触发一次主动消息。
  *
  * 触发后立刻重排下一次闹钟，并拉起前台服务来执行（前台进程避免网络被系统掐断）。
+ * 发不发消息由 AI 在这一轮里自行判断，闹钟不做拦截（用户明确要求不要免打扰）。
+ * 手动测试（force）不走这里，不受影响。
  */
 class WorkflowAlarmReceiver : BroadcastReceiver(), KoinComponent {
     private val workflowStore: WorkflowStore by inject()

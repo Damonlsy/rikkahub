@@ -28,6 +28,12 @@ data class StickerEntity(
     /** 备注/关键词，给 AI 识别用 */
     @ColumnInfo("name")
     val name: String = "",
+    /** 分类（AI 识图打标：搞笑/可爱/无语/生气…） */
+    @ColumnInfo(name = "category", defaultValue = "")
+    val category: String = "",
+    /** 内容描述（AI 识图打标：一句话说清画面和图上的字） */
+    @ColumnInfo(name = "description", defaultValue = "")
+    val description: String = "",
     @ColumnInfo("created_at")
     val createdAt: Long,
 )

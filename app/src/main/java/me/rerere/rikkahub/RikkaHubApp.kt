@@ -239,7 +239,7 @@ class RikkaHubApp : Application() {
 
         val workflowChannel = NotificationChannelCompat
             .Builder(WORKFLOW_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
-            .setName("定时查岗")
+            .setName("主动消息")
             .setVibrationEnabled(true)
             .build()
         notificationManager.createNotificationChannel(workflowChannel)

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +41,7 @@ import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Delete02
+import me.rerere.rikkahub.data.ai.StickerClassifier
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.PatActionDAO
 import me.rerere.rikkahub.data.db.dao.StickerDAO
@@ -65,6 +67,7 @@ fun SettingStickerPatPage() {
     val settingsStore: SettingsStore = koinInject()
     val stickerDao: StickerDAO = koinInject()
     val patActionDao: PatActionDAO = koinInject()
+    val stickerClassifier: StickerClassifier = koinInject()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -77,6 +80,7 @@ fun SettingStickerPatPage() {
     val allStickers by stickerDao.listAll().collectAsStateWithLifecycle(initialValue = emptyList())
     val myStickerCount = allStickers.count { it.owner == STICKER_OWNER_USER }
     val aiStickerCount = allStickers.count { it.owner == STICKER_OWNER_AI }
+    val classifyProgress by stickerClassifier.progress.collectAsStateWithLifecycle()
 
     var wordOwner by remember { mutableStateOf(PAT_AUTHOR_USER) }
     var pendingSlot by remember { mutableStateOf(PAT_SLOT_ALL.first()) }
@@ -135,6 +139,30 @@ fun SettingStickerPatPage() {
                         headlineContent = { Text("AI 的表情包库") },
                         supportingContent = { Text("AI 只会从这个库里发表情包，也可以在表情包面板里帮它收藏") },
                         trailingContent = { Text("$aiStickerCount 张") },
+                    )
+                    item(
+                        headlineContent = { Text("AI 认图") },
+                        supportingContent = {
+                            val progress = classifyProgress
+                            val pending = allStickers.count { it.description.isBlank() }
+                            Text(
+                                if (progress != null) {
+                                    "正在给表情包打标签 ${progress.done}/${progress.total}…（用 OCR/识图模型）"
+                                } else if (pending > 0) {
+                                    "还有 $pending 张没认过。让 AI 看一遍图，记住每张是什么，聊天时才能挑对"
+                                } else {
+                                    "都认过了，AI 知道每张表情包是什么"
+                                }
+                            )
+                        },
+                        trailingContent = {
+                            Button(
+                                enabled = classifyProgress == null && allStickers.any { it.description.isBlank() },
+                                onClick = { scope.launch { stickerClassifier.classifyPending() } },
+                            ) {
+                                Text(if (classifyProgress != null) "识别中…" else "识别")
+                            }
+                        },
                     )
                 }
             }

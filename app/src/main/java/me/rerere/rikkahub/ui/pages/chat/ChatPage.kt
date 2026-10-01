@@ -6,6 +6,7 @@ import android.speech.SpeechRecognizer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -45,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -554,7 +556,17 @@ private fun ChatPageContent(
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
-            ChatList(
+            // 表情包面板打开时，点消息区任意没被消费的地方就把面板收起来
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(showStickerPanel) {
+                        if (showStickerPanel) {
+                            detectTapGestures { showStickerPanel = false }
+                        }
+                    },
+            ) {
+                ChatList(
                 innerPadding = innerPadding,
                 conversation = conversation,
                 state = chatListState,
@@ -637,6 +649,7 @@ private fun ChatPageContent(
                     showCompressDialog = true
                 },
             )
+            }
         }
 
         if (showFilesSheet) {

@@ -51,6 +51,7 @@ import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Sticker
+import me.rerere.rikkahub.data.ai.StickerClassifier
 import me.rerere.rikkahub.data.db.dao.StickerDAO
 import me.rerere.rikkahub.data.db.entity.StickerEntity
 import me.rerere.rikkahub.data.files.FilesManager
@@ -73,6 +74,7 @@ fun StickerPanel(
 ) {
     val stickerDao: StickerDAO = koinInject()
     val filesManager: FilesManager = koinInject()
+    val stickerClassifier: StickerClassifier = koinInject()
     val scope = rememberCoroutineScope()
 
     var owner by remember { mutableStateOf(STICKER_OWNER_USER) }
@@ -101,6 +103,8 @@ fun StickerPanel(
                         )
                     )
                 }
+                // 新导入的让 AI 悄悄看一遍图，写好分类和描述，之后挑图不瞎猜
+                stickerClassifier.classifyPending()
             }
         }
     }

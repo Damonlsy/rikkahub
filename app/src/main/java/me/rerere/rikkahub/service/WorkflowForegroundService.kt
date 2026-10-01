@@ -161,7 +161,7 @@ class WorkflowForegroundService : Service() {
         val notification = NotificationCompat.Builder(this, WORKFLOW_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_rikkahub)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText("定时查岗已开启，到点会来查你在干嘛")
+            .setContentText("主动消息已开启，AI 会主动来找你")
             .setContentIntent(contentPendingIntent())
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(true)

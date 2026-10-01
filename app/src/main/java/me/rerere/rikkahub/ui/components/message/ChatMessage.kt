@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -448,16 +449,33 @@ private fun MessagePartsBlock(
                             if (role == MessageRole.USER) {
                                 val isPixel = settings.displaySetting.userBubbleStyle == "pixel"
                                 val isGlass = !isPixel && settings.displaySetting.userBubbleStyle == "glass"
-                                val glassTint = MaterialTheme.colorScheme.primaryContainer
+                                val glassTint = Color(0xFF2E5E96)
+                                val glassRounded = RoundedCornerShape(12.dp, 12.dp, 2.dp, 12.dp)
                                 Surface(
                                         modifier = Modifier.animateContentSize().then(
-                                            if (isGlass) glassBubbleModifier(hazeState, RoundedCornerShape(16.dp), glassTint, settings.displaySetting.bubbleOpacity) else Modifier
+                                            if (isGlass) {
+                                                Modifier
+                                                    .then(
+                                                        if (hazeState != null) {
+                                                            glassBubbleModifier(hazeState, glassRounded, glassTint, settings.displaySetting.bubbleOpacity)
+                                                        } else {
+                                                            Modifier
+                                                        }
+                                                    )
+                                                    .background(glassGradient(true), glassRounded)
+                                            } else {
+                                                Modifier
+                                            }
                                         ),
-                                        shape = if (isPixel) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
+                                        shape = if (isPixel) {
+                                            RoundedCornerShape(0.dp)
+                                        } else if (isGlass) {
+                                            glassRounded
+                                        } else {
+                                            RoundedCornerShape(16.dp)
+                                        },
                                         color = if (isPixel) {
                                             if (isDarkTheme) Color.Black else Color.White
-                                        } else if (isGlass && hazeState == null) {
-                                            glassTint.copy(alpha = settings.displaySetting.bubbleOpacity * 0.45f)
                                         } else if (isGlass) {
                                             Color.Transparent
                                         } else {
@@ -471,7 +489,7 @@ private fun MessagePartsBlock(
                                         border = if (isPixel) {
                                             BorderStroke(2.dp, if (isDarkTheme) Color.White else Color.Black)
                                         } else if (isGlass) {
-                                            BorderStroke(1.dp, glassTint.copy(alpha = 0.55f))
+                                            BorderStroke(1.dp, Color(0x2E96C8F5))
                                         } else {
                                             null
                                         },
@@ -501,18 +519,35 @@ private fun MessagePartsBlock(
                                 if (useBubble) {
                                     val isPixel = style == "pixel"
                                     val isGlass = !isPixel && style == "glass"
-                                    val glassTint = MaterialTheme.colorScheme.surfaceContainerHigh
+                                    val glassTint = Color(0xFF2A5488)
+                                    val glassRounded = RoundedCornerShape(12.dp, 12.dp, 12.dp, 2.dp)
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         paragraphs.forEach { paragraph ->
                                             Surface(
                                                 modifier = Modifier.animateContentSize().then(
-                                                    if (isGlass) glassBubbleModifier(hazeState, RoundedCornerShape(16.dp), glassTint, settings.displaySetting.bubbleOpacity) else Modifier
+                                                    if (isGlass) {
+                                                        Modifier
+                                                            .then(
+                                                                if (hazeState != null) {
+                                                                    glassBubbleModifier(hazeState, glassRounded, glassTint, settings.displaySetting.bubbleOpacity)
+                                                                } else {
+                                                                    Modifier
+                                                                }
+                                                            )
+                                                            .background(glassGradient(false), glassRounded)
+                                                    } else {
+                                                        Modifier
+                                                    }
                                                 ),
-                                                shape = if (isPixel) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
+                                                shape = if (isPixel) {
+                                                    RoundedCornerShape(0.dp)
+                                                } else if (isGlass) {
+                                                    glassRounded
+                                                } else {
+                                                    RoundedCornerShape(16.dp)
+                                                },
                                                     color = if (isPixel) {
                                                         if (isDarkTheme) Color.Black else Color.White
-                                                    } else if (isGlass && hazeState == null) {
-                                                        glassTint.copy(alpha = settings.displaySetting.bubbleOpacity * 0.45f)
                                                     } else if (isGlass) {
                                                         Color.Transparent
                                                     } else {
@@ -526,7 +561,7 @@ private fun MessagePartsBlock(
                                                     border = if (isPixel) {
                                                         BorderStroke(2.dp, if (isDarkTheme) Color.White else Color.Black)
                                                     } else if (isGlass) {
-                                                        BorderStroke(1.dp, glassTint.copy(alpha = 0.55f))
+                                                        BorderStroke(1.dp, Color(0x2E96C8F5))
                                                     } else {
                                                         null
                                                     },
@@ -754,6 +789,15 @@ private fun MessagePartsBlock(
         }
     }
 }
+
+/** 用户定稿的气泡渐变：145° 深蓝半透明，user 偏亮、AI 偏深（对应网页版 .msg.me/.msg.ai::after）。 */
+private fun glassGradient(isUser: Boolean): Brush = Brush.linearGradient(
+    colors = if (isUser) {
+        listOf(Color(0x47306092), Color(0x521E3E66), Color(0x5C122848))
+    } else {
+        listOf(Color(0x3D28507E), Color(0x47183458), Color(0x510E223E))
+    },
+)
 
 /**
  * 拍一拍：一行居中的系统小字，例如「AI摸了摸你」。

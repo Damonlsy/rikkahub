@@ -2,19 +2,24 @@ package me.rerere.rikkahub.ui.components.webview
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup.LayoutParams
 import android.webkit.ConsoleMessage
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -26,9 +31,24 @@ import androidx.compose.ui.viewinterop.AndroidView
 
 private const val TAG = "WebView"
 
-internal class MyWebChromeClient(private val state: WebViewState) : WebChromeClient() {
+internal class MyWebChromeClient(
+    private val state: WebViewState,
+    private val onShowFileChooser: (
+        ValueCallback<Array<Uri>>,
+        WebChromeClient.FileChooserParams,
+    ) -> Boolean = { _, _ -> false },
+) : WebChromeClient() {
     override fun onProgressChanged(view: WebView?, newProgress: Int) {
         state.loadingProgress = newProgress / 100f
+    }
+
+    override fun onShowFileChooser(
+        webView: WebView?,
+        filePathCallback: ValueCallback<Array<Uri>>?,
+        fileChooserParams: FileChooserParams?,
+    ): Boolean {
+        if (filePathCallback == null || fileChooserParams == null) return false
+        return onShowFileChooser(filePathCallback, fileChooserParams)
     }
 
     override fun onReceivedTitle(view: WebView?, title: String?) {
@@ -104,7 +124,31 @@ fun WebView(
     onUpdated: (WebView) -> Unit = {},
 ) {
     // Remember the clients based on the state
-    val webChromeClient = remember { MyWebChromeClient(state) }
+    var pendingFileChooserCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val callback = pendingFileChooserCallback
+        pendingFileChooserCallback = null
+        callback?.onReceiveValue(if (uris.isEmpty()) null else uris.toTypedArray())
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            pendingFileChooserCallback?.onReceiveValue(null)
+            pendingFileChooserCallback = null
+        }
+    }
+    val webChromeClient = remember(state) {
+        MyWebChromeClient(state) { filePathCallback, fileChooserParams ->
+            pendingFileChooserCallback?.onReceiveValue(null)
+            pendingFileChooserCallback = filePathCallback
+            val mimeTypes = fileChooserParams.acceptTypes
+                .filter { it.isNotBlank() && it != "*/*" }
+                .toTypedArray()
+            fileChooserLauncher.launch(if (mimeTypes.isEmpty()) arrayOf("*/*") else mimeTypes)
+            true
+        }
+    }
     val webViewClient = remember { MyWebViewClient(state) }
 
     Box(

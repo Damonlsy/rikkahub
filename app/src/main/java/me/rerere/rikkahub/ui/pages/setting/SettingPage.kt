@@ -211,9 +211,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         onClick = { navController.navigate(Screen.Workflow) },
                         leadingContent = { Icon(HugeIcons.Alert01, null) },
                         supportingContent = {
-                            Text("定时查岗：AI 隔一段时间查你的使用时长和屏幕内容，发一条自定义消息，超时锁应用")
+                            Text("主动消息：AI 隔一段时间主动找你，查时长屏幕也能聊天气日记，说不说它自己定，超时锁应用")
                         },
-                        headlineContent = { Text("定时查岗") },
+                        headlineContent = { Text("主动消息") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingStickerPat) },

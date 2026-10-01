@@ -6,6 +6,7 @@ import com.google.firebase.crashlytics.crashlytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.PendingOutgoingMessages
+import me.rerere.rikkahub.data.ai.StickerClassifier
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.datastore.ConversationCompressionStore
@@ -104,6 +105,14 @@ val appModule = module {
 
     single {
         PendingOutgoingMessages()
+    }
+
+    single {
+        StickerClassifier(
+            settingsStore = get(),
+            providerManager = get(),
+            dao = get(),
+        )
     }
 
     single {

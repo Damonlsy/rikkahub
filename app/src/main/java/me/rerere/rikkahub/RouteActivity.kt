@@ -1,4 +1,4 @@
-package me.rerere.rikkahub
+﻿package me.rerere.rikkahub
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -88,6 +88,7 @@ import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.diary.DiaryDetailPage
+import me.rerere.rikkahub.ui.pages.diary.DiaryMomentsPage
 import me.rerere.rikkahub.ui.pages.diary.DiaryPage
 import me.rerere.rikkahub.ui.pages.extensions.ExtensionsPage
 import me.rerere.rikkahub.ui.pages.extensions.PromptPage
@@ -135,6 +136,7 @@ import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.study.FlashcardReviewPage
 import me.rerere.rikkahub.ui.pages.study.StudyPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
+import me.rerere.rikkahub.ui.pages.coreading.CoreadingPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
@@ -154,7 +156,7 @@ class RouteActivity : ComponentActivity() {
     private var navStack: MutableList<NavKey>? = null
     private val pendingIntents = ArrayDeque<Intent>()
 
-    // Volume key listener registry — last registered handler wins
+    // Volume key listener registry 鈥?last registered handler wins
     internal val volumeKeyListeners = mutableListOf<(isVolumeUp: Boolean) -> Boolean>()
 
     @SuppressLint("RestrictedApi")
@@ -222,8 +224,7 @@ class RouteActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent) {
         val backStack = navStack ?: run {
-            // Compose 尚未创建导航栈，待就绪后处理。
-            pendingIntents.addLast(intent)
+            // Compose 灏氭湭鍒涘缓瀵艰埅鏍堬紝寰呭氨缁悗澶勭悊銆?            pendingIntents.addLast(intent)
             return
         }
         val destination = when (intent.action) {
@@ -255,8 +256,8 @@ class RouteActivity : ComponentActivity() {
                 when (event) {
                     is AppEvent.Speak -> tts.speak(event.text)
                     is AppEvent.OpenUsageAccessSettings -> this@RouteActivity.openUsageAccessSettings()
-                    is AppEvent.ChatGenerationUpdate -> Unit // 由 ChatNotificationManager 消费
-                    is AppEvent.ChatGenerationEnded -> Unit // 由 ChatNotificationManager 消费
+                    is AppEvent.ChatGenerationUpdate -> Unit // 鐢?ChatNotificationManager 娑堣垂
+                    is AppEvent.ChatGenerationEnded -> Unit // 鐢?ChatNotificationManager 娑堣垂
                 }
             }
         }
@@ -360,6 +361,14 @@ class RouteActivity : ComponentActivity() {
                                 DiaryPage(
                                     onBack = { nav.popBackStack() },
                                     onOpenDiary = { id -> nav.navigate(Screen.DiaryDetail(id)) },
+                                    onOpenMoments = { nav.navigate(Screen.DiaryMoments) },
+                                )
+                            }
+
+                            entry<Screen.DiaryMoments> {
+                                val nav = LocalNavController.current
+                                DiaryMomentsPage(
+                                    onBack = { nav.popBackStack() },
                                 )
                             }
 
@@ -453,6 +462,10 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.WebView> { key ->
                                 WebViewPage(key.url, key.contentId)
+                            }
+
+                            entry<Screen.Coreading> { key ->
+                                CoreadingPage(conversationId = key.conversationId)
                             }
 
                             entry<Screen.SettingTheme> {
@@ -609,7 +622,7 @@ class RouteActivity : ComponentActivity() {
                     )
                     if (BuildConfig.DEBUG) {
                         Text(
-                            text = "[开发模式]",
+                            text = "[寮€鍙戞ā寮廬",
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .padding(top = 4.dp),
@@ -641,7 +654,7 @@ class RouteActivity : ComponentActivity() {
                                 )
                                 if (state != null) {
                                     Text(
-                                        text = "v${state.from} → v${state.to}",
+                                        text = "v${state.from} 鈫?v${state.to}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -675,6 +688,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Diary : Screen
+
+    @Serializable
+    data object DiaryMoments : Screen
 
     @Serializable
     data class DiaryDetail(val id: String) : Screen
@@ -732,6 +748,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data class WebView(val url: String = "", val contentId: String = "") : Screen
+
+    @Serializable
+    data class Coreading(val conversationId: String? = null) : Screen
 
     @Serializable
     data object SettingTheme : Screen

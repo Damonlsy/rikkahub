@@ -6,6 +6,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import me.rerere.ai.core.TokenUsage
+import me.rerere.rikkahub.data.db.dao.AnniversaryDAO
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.DiaryDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
@@ -17,9 +18,11 @@ import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.MomentDAO
 import me.rerere.rikkahub.data.db.dao.PatActionDAO
+import me.rerere.rikkahub.data.db.dao.PeriodDAO
 import me.rerere.rikkahub.data.db.dao.StickerDAO
 import me.rerere.rikkahub.data.db.dao.StudyDAO
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
+import me.rerere.rikkahub.data.db.entity.AnniversaryEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.DiaryCommentEntity
 import me.rerere.rikkahub.data.db.entity.DiaryEntity
@@ -35,6 +38,7 @@ import me.rerere.rikkahub.data.db.entity.MomentEntity
 import me.rerere.rikkahub.data.db.entity.MomentFavoriteEntity
 import me.rerere.rikkahub.data.db.entity.MomentLikeEntity
 import me.rerere.rikkahub.data.db.entity.PatActionEntity
+import me.rerere.rikkahub.data.db.entity.PeriodRecordEntity
 import me.rerere.rikkahub.data.db.entity.StickerEntity
 import me.rerere.rikkahub.data.db.entity.StudySessionEntity
 import me.rerere.rikkahub.data.db.entity.StudyWordEntity
@@ -65,8 +69,10 @@ import me.rerere.rikkahub.utils.JsonInstant
         PatActionEntity::class,
         StudyWordEntity::class,
         StudySessionEntity::class,
+        PeriodRecordEntity::class,
+        AnniversaryEntity::class,
     ],
-    version = 33,
+    version = 35,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -95,6 +101,8 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 31, to = 32),
         AutoMigration(from = 32, to = 33),
+        AutoMigration(from = 33, to = 34),
+        AutoMigration(from = 34, to = 35),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -126,6 +134,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun patActionDao(): PatActionDAO
 
     abstract fun studyDao(): StudyDAO
+
+    abstract fun periodDao(): PeriodDAO
+
+    abstract fun anniversaryDao(): AnniversaryDAO
 }
 
 object TokenUsageConverter {

@@ -581,7 +581,7 @@ private fun BubbleStylePicker(
     selected: String,
     onSelect: (String) -> Unit,
 ) {
-    val options = listOf("default" to "默认", "pixel" to "黑白像素", "glass" to "磨砂玻璃")
+    val options = listOf("default" to "默认", "pixel" to "黑白像素", "glass" to "蓝调毛玻璃")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { (value, label) ->
             FilterChip(

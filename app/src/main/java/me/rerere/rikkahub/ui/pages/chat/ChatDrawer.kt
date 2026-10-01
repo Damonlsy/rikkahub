@@ -58,6 +58,7 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.NotebookPen
 import com.composables.icons.lucide.Wallet
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.GraduationCap
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Delete01
@@ -417,6 +418,20 @@ fun ChatDrawerContent(
                             },
                             onClick = {
                                 navController.navigate(Screen.Diary)
+                            },
+                        )
+                    }
+
+                    item {
+                        DrawerAction(
+                            icon = {
+                                Icon(HugeIcons.BookOpen01, "一起读书")
+                            },
+                            label = {
+                                Text("一起读书")
+                            },
+                            onClick = {
+                                navController.navigate(Screen.Coreading(current.id.toString()))
                             },
                         )
                     }

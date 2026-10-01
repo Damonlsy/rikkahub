@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Damonlsy fork：定时发消息工作流的配置。
+ * Damonlsy fork：主动消息工作流的配置。
  *
  * 用独立的 SharedPreferences 存储，不碰主设置数据（红线：绝不覆盖用户已配置的数据）。
  */

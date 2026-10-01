@@ -76,7 +76,7 @@ fun WorkflowSettingPage(
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text("定时查岗") },
+                title = { Text("主动消息") },
                 navigationIcon = { BackButton() },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
@@ -123,12 +123,15 @@ fun WorkflowSettingPage(
             item("workflowSwitch") {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("定时查岗") },
+                    title = { Text("主动消息") },
                 ) {
                     item(
-                        headlineContent = { Text("开启定时查岗") },
+                        headlineContent = { Text("开启主动找你") },
                         supportingContent = {
-                            Text("开启后每隔一段时间，AI 会查一次你的使用时长和屏幕内容，然后按自己的意思发一条消息；白名单外应用用太久还可以由 AI 决定锁不锁。会有一条常驻通知。")
+                            Text(
+                                "开启后每隔一段时间，AI 会主动来找你——自己看情况决定说什么：可以查你的使用时长和屏幕，" +
+                                    "也可以聊时间、天气和你最近的日记，没话说就不发；白名单外应用用太久还可以由 AI 决定锁不锁。会有一条常驻通知。"
+                            )
                         },
                         trailingContent = {
                             Switch(
@@ -149,7 +152,7 @@ fun WorkflowSettingPage(
                     item(
                         headlineContent = { Text("AI 自行决定发不发消息") },
                         supportingContent = {
-                            Text("开启后，AI 每次查岗自己判断值不值得发——没话说就不发，不打扰你；关闭则每轮都会发一条。")
+                            Text("开启后，AI 每次自己判断值不值得发——没话说就不发，不打扰你；关闭则每轮都会发一条。")
                         },
                         trailingContent = {
                             Switch(
@@ -169,10 +172,10 @@ fun WorkflowSettingPage(
                     title = { Text("参数") },
                 ) {
                     item(
-                        headlineContent = { Text("查岗间隔：${interval.roundToInt()} 分钟") },
+                        headlineContent = { Text("触发间隔：${interval.roundToInt()} 分钟") },
                         supportingContent = {
                             Column {
-                                Text("每隔这么久就自动查一次岗。")
+                                Text("每隔这么久就自动来一轮，发不发由 AI 定。")
                                 Slider(
                                     value = interval,
                                     onValueChange = { interval = it },
@@ -212,7 +215,7 @@ fun WorkflowSettingPage(
                 ) {
                     item(
                         headlineContent = { Text("立即试一次") },
-                        supportingContent = { Text("马上跑一次工作流：查时长 + 读屏幕 + 让 AI 自己决定说什么 + 弹头像。") },
+                        supportingContent = { Text("马上跑一次工作流：查时长 + 读屏幕 + 天气日记 + 让 AI 自己决定说什么 + 弹头像。") },
                         trailingContent = {
                             Button(
                                 enabled = !testRunning,
@@ -256,7 +259,7 @@ fun WorkflowSettingPage(
     testResult?.let { result ->
         AlertDialog(
             onDismissRequest = { testResult = null },
-            title = { Text("查岗结果") },
+            title = { Text("主动消息结果") },
             text = { Text(result) },
             confirmButton = {
                 TextButton(onClick = { testResult = null }) { Text("好") }
