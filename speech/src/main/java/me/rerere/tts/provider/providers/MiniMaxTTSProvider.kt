@@ -65,7 +65,7 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
             })
         }
 
-        Log.i(TAG, "generateSpeech: $requestBody")
+        Log.d(TAG, "generateSpeech: request prepared")
 
         val httpRequest = Request.Builder()
             .url("${providerSetting.baseUrl}/t2a_v2")

@@ -52,7 +52,7 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
         if (!response.isSuccessful) {
             val errorBody = response.body?.string()
             Log.e(TAG, "generateSpeech: ${response.code} ${response.message}")
-            Log.e(TAG, "generateSpeech: $errorBody")
+            Log.e(TAG, "generateSpeech: request failed with ${response.code}")
             throw TTSProviderException(
                 message = "ElevenLabs TTS request failed: ${response.code} ${response.message}",
                 statusCode = response.code

@@ -110,6 +110,10 @@ private fun AssistantLocalToolContent(
             calendarPermissionState.requestPermissions()
             return
         }
+        if (enabled && option == LocalToolOption.DeviceAutomation && !isAccessibilityServiceEnabled(context)) {
+            toaster.show(message = "请先开启无障碍服务，设备控制才能读取和操作屏幕", type = ToastType.Warning)
+            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
         val newLocalTools = if (enabled) {
             assistant.localTools + option
         } else {
@@ -226,6 +230,27 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+            item(
+                headlineContent = { Text("设备控制") },
+                supportingContent = {
+                    Text("让 AI 扫描当前界面、截图、点击、滑动、输入文字、打开应用和网页；会改变手机状态的操作都需要你批准")
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.DeviceAutomation),
+                        onCheckedChange = { toggleLocalTool(LocalToolOption.DeviceAutomation, it) },
+                    )
+                },
+            )
         }
     }
+}
+
+private fun isAccessibilityServiceEnabled(context: android.content.Context): Boolean {
+    val expected = android.content.ComponentName(context, me.rerere.rikkahub.service.AppLockAccessibilityService::class.java)
+    val enabled = android.provider.Settings.Secure.getString(
+        context.contentResolver,
+        android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+    ).orEmpty()
+    return enabled.split(':').any { android.content.ComponentName.unflattenFromString(it) == expected }
 }

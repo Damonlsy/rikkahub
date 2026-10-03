@@ -34,6 +34,7 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.hooks.toComposeAvatarShape
 import me.rerere.rikkahub.utils.PAT_AUTHOR_USER
 import me.rerere.rikkahub.utils.buildPatTextSamples
 
@@ -116,6 +117,7 @@ fun ChatMessageUserAvatar(
     onPat: ((patText: String) -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
+    val avatarShape = settings.displaySetting.chatAvatarShape.toComposeAvatarShape()
     if (message.role == MessageRole.USER && !message.parts.isEmptyUIMessage() && settings.displaySetting.showUserAvatar) {
         var showPatMenu by remember { mutableStateOf(false) }
         val doubleTapState = rememberAvatarDoubleTapState()
@@ -153,12 +155,13 @@ fun ChatMessageUserAvatar(
                     )
                     UIAvatar(
                         name = nickname,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(32.dp),
                         value = avatar,
                         loading = false,
                         onClick = {
                             doubleTapState.onChildClick(SystemClock.uptimeMillis()) { showPatMenu = true }
                         },
+                        shape = avatarShape,
                     )
                 }
             }
@@ -185,6 +188,7 @@ fun ChatMessageAssistantAvatar(
     onPat: ((patText: String) -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
+    val avatarShape = settings.displaySetting.chatAvatarShape.toComposeAvatarShape()
     val showIcon = settings.displaySetting.showModelIcon
     val useAssistantAvatar = assistant?.useAssistantAvatar == true
     if (message.role == MessageRole.ASSISTANT && (model != null || useAssistantAvatar)) {
@@ -218,12 +222,13 @@ fun ChatMessageAssistantAvatar(
                     if (showIcon) {
                         UIAvatar(
                             name = assistant.name,
-                            modifier = Modifier.size(28.dp),
+                            modifier = Modifier.size(32.dp),
                             value = assistant.avatar,
                             loading = loading,
                             onClick = {
                                 doubleTapState.onChildClick(SystemClock.uptimeMillis()) { showPatMenu = true }
                             },
+                            shape = avatarShape,
                         )
                     }
                     Row(
@@ -243,8 +248,9 @@ fun ChatMessageAssistantAvatar(
                     if (showIcon) {
                         AutoAIIcon(
                             name = model.modelId,
-                            modifier = Modifier.size(28.dp),
-                            loading = loading
+                            modifier = Modifier.size(32.dp),
+                            loading = loading,
+                            shape = avatarShape,
                         )
                     }
                     Row(

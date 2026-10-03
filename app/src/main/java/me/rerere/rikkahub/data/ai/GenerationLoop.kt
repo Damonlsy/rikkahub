@@ -87,6 +87,7 @@ class GenerationLoop(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
+        requestContext: String? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -142,6 +143,7 @@ class GenerationLoop(
                     conversationModeInjectionIds = conversationModeInjectionIds,
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
+                    requestContext = requestContext,
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
@@ -342,6 +344,7 @@ class GenerationLoop(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
+        requestContext: String? = null,
     ) {
         val internalMessages = buildList {
             val system = buildString {
@@ -364,6 +367,11 @@ class GenerationLoop(
                 tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(model, messages))
+                }
+                if (!requestContext.isNullOrBlank()) {
+                    appendLine()
+                    appendLine()
+                    append(requestContext)
                 }
             }
             if (system.isNotBlank()) {

@@ -248,10 +248,9 @@ val dataSourceModule = module {
             }
             .addNetworkInterceptor(RequestLoggingInterceptor())
             .addInterceptor(AIRequestInterceptor())
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                redactHeader("Proxy-Authorization")
-                level = HttpLoggingInterceptor.Level.HEADERS
-            })
+            // RequestLoggingInterceptor records a redacted summary when explicitly enabled.
+            // The stock interceptor cannot redact secrets embedded in URLs, so keep it disabled.
+            .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.NONE })
             .build()
         client.also { SearchService.init(it, get()) }
     }

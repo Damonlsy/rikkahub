@@ -79,6 +79,7 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
+import me.rerere.rikkahub.data.model.ContextMemoryKind
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.localFileUrls
 import me.rerere.rikkahub.data.model.replaceRegexes
@@ -113,6 +114,18 @@ internal fun backgroundTextGenerationParams(
     sessionId = conversationId.toString(),
 )
 
+private val forkTitleSuffixRegex = Regex("""\((\d+)\)$""")
+
+internal fun forkConversationTitle(sourceTitle: String, existingTitles: Set<String>): String {
+    // 源标题已带 (N) 后缀时递增序号，避免多次 fork 后叠加成 xxx(1)(1)(1)
+    val suffix = forkTitleSuffixRegex.find(sourceTitle)
+    val baseTitle = suffix?.let { sourceTitle.removeRange(it.range) } ?: sourceTitle
+    val start = suffix?.groupValues?.get(1)?.toIntOrNull()?.plus(1) ?: 1
+    return generateSequence(start) { it + 1 }
+        .map { "$baseTitle($it)" }
+        .first { it !in existingTitles }
+}
+
 internal fun createForkConversation(
     source: Conversation,
     messageNodes: List<MessageNode>,
@@ -120,9 +133,7 @@ internal fun createForkConversation(
 ): Conversation = Conversation(
     id = Uuid.random(),
     assistantId = source.assistantId,
-    title = generateSequence(1) { it + 1 }
-        .map { "${source.title}($it)" }
-        .first { it !in existingTitles },
+    title = forkConversationTitle(source.title, existingTitles),
     messageNodes = messageNodes,
     customSystemPrompt = source.customSystemPrompt,
     modeInjectionIds = source.modeInjectionIds,
@@ -359,12 +370,17 @@ class ChatService(
         dispatchNextQueuedMessage(conversationId)
     }
 
-    fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true) {
+    fun sendMessage(
+        conversationId: Uuid,
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        requestContext: String? = null,
+    ) {
         if (content.isEmptyInputMessage()) return
         val session = sessionManager.getOrCreate(conversationId)
         synchronized(session) {
             if (session.messageQueue.state.value.messages.isEmpty()) session.messageQueue.resume()
-            session.messageQueue.enqueue(content, answer)
+            session.messageQueue.enqueue(content, answer, requestContext)
             dispatchNextQueuedMessage(conversationId)
         }
     }
@@ -463,7 +479,7 @@ class ChatService(
 
                 // 开始补全
                 if (answer) {
-                    handleMessageComplete(conversationId)
+                    handleMessageComplete(conversationId, requestContext = queued.requestContext)
                 }
 
                 queued.reply?.completeWith(runCatching {
@@ -647,7 +663,8 @@ class ChatService(
 
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
-        messageRange: ClosedRange<Int>? = null
+        messageRange: ClosedRange<Int>? = null,
+        requestContext: String? = null,
     ) {
         val settings = settingsStore.settingsFlow.first()
         val initialConversation = getConversationFlow(conversationId).value
@@ -710,6 +727,11 @@ class ChatService(
 
             // start generating
             val session = sessionManager.getOrCreate(conversationId)
+            val latestUserText = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText().orEmpty()
+            val contextMemories = memoryRepository.getContextMemories(assistant.id.toString(), latestUserText)
+            val memoryPrompt = contextMemories.takeIf { it.isNotEmpty() }?.joinToString("\n") {
+                "- ${it.content}"
+            }?.let { "[上下文记忆库]\n$it" }
             generationLoop.generateText(
                 settings = settings,
                 model = model,
@@ -727,6 +749,7 @@ class ChatService(
                 conversationModeInjectionIds = conversation.modeInjectionIds,
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
+                requestContext = listOfNotNull(requestContext, memoryPrompt).joinToString("\n\n").ifBlank { null },
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
@@ -742,7 +765,15 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = tools,
-            ).onCompletion {
+            ).onCompletion { cause ->
+                if (cause == null) {
+                    // 表情包/拍一拍落地：生成已结束，插到本轮 AI 回复前面是安全的
+                    flushPendingOutgoingMessages(conversationId)
+                } else {
+                    // 失败或取消的轮次不发送主动消息，避免出现表情包有了但回复失败的半截状态
+                    pendingOutgoing.drain(conversationId)
+                }
+
                 // 可能被取消了，或者意外结束，兜底更新
                 val updatedConversation = session.finishGeneration { conversation ->
                     saveConversation(conversationId, conversation)
@@ -763,11 +794,6 @@ class ChatService(
                         val updatedConversation = getConversationFlow(conversationId).value
                             .updateCurrentMessages(chunk.messages)
                 updateConversation(conversationId, updatedConversation)
-
-                // 工具在本轮排队的「AI 主动消息」（表情包 / 拍一拍）在这里落地。
-                // 必须等生成结束再插：生成期间 Conversation.updateCurrentMessages 是按下标
-                // 映射 messageNodes 的，直接插节点会被流式写入覆盖/错位。
-                flushPendingOutgoingMessages(conversationId)
 
 
                         // 通知等边缘副作用由 ChatNotificationManager 消费；
@@ -927,8 +953,9 @@ class ChatService(
         runCatching {
             val settings = settingsStore.settingsFlow.first()
             val model = settings.findModelById(settings.fastModelId)
-                ?: return@runCatching
-            val provider = model.findProvider(settings.providers) ?: return@runCatching
+                ?: throw IllegalStateException(context.getString(R.string.error_fast_model_not_found))
+            val provider = model.findProvider(settings.providers)
+                ?: throw IllegalStateException(context.getString(R.string.error_fast_model_provider_not_found))
 
             val providerHandler = providerManager.getProviderByType(provider)
             val result = providerHandler.generateText(
@@ -1117,11 +1144,80 @@ class ChatService(
             )
         )
 
+        saveContextMemoriesFromSummary(
+            assistantId = conversation.assistantId.toString(),
+            conversationId = conversationId,
+            summary = mergedSummary,
+            model = model,
+            provider = provider,
+            providerHandler = providerHandler,
+        )
+
         appendCompressionNotice(
             conversationId = conversationId,
             compressedCount = messagesToCompress.size,
             keptCount = uncompressedMessages.size - messagesToCompress.size,
         )
+    }
+
+    private suspend fun saveContextMemoriesFromSummary(
+        assistantId: String,
+        conversationId: Uuid,
+        summary: String,
+        model: Model,
+        provider: me.rerere.ai.provider.ProviderSetting,
+        providerHandler: me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>,
+    ) {
+        memoryRepository.addCompressionRecord(
+            assistantId = assistantId,
+            summary = summary,
+            sourceConversationId = conversationId.toString(),
+        )
+        val extractionPrompt = """
+            Extract only durable user facts from this conversation summary.
+            Ignore passwords, tokens, verification codes, secrets, and private credentials.
+            Return one item per line exactly as: KIND|FACT
+            KIND must be one of: PREFERENCE, PERSON, PROJECT, DECISION, TODO, OTHER.
+            Return NONE when there are no durable facts.
+
+            SUMMARY:
+            $summary
+        """.trimIndent()
+        val extracted = providerHandler.generateText(
+            providerSetting = provider,
+            messages = listOf(UIMessage.user(extractionPrompt)),
+            params = backgroundTextGenerationParams(model, conversationId),
+        ).message.toText().trim()
+        if (extracted.equals("NONE", ignoreCase = true)) return
+        val sensitive = Regex("(?i)(password|passwd|token|secret|验证码|密码|令牌|口令|私钥)")
+        extracted.lineSequence()
+            .map(String::trim)
+            .filter { it.isNotBlank() && !it.equals("NONE", ignoreCase = true) }
+            .mapNotNull { line ->
+                val separator = line.indexOf('|')
+                if (separator <= 0) return@mapNotNull null
+                val kind = runCatching {
+                    ContextMemoryKind.valueOf(line.substring(0, separator).trim().uppercase())
+                }.getOrDefault(ContextMemoryKind.OTHER)
+                val fact = line.substring(separator + 1).trim()
+                if (fact.isBlank() || sensitive.containsMatchIn(fact)) null else kind to fact
+            }
+            .distinctBy { it.second.lowercase() }
+            .forEach { (kind, fact) ->
+                memoryRepository.upsertContextMemory(
+                    assistantId = assistantId,
+                    content = fact,
+                    kind = kind,
+                    sourceConversationId = conversationId.toString(),
+                    confidence = 0.65f,
+                    importance = when (kind) {
+                        ContextMemoryKind.PREFERENCE, ContextMemoryKind.PERSON -> 0.85f
+                        ContextMemoryKind.PROJECT, ContextMemoryKind.DECISION -> 0.8f
+                        ContextMemoryKind.TODO -> 0.7f
+                        ContextMemoryKind.OTHER -> 0.5f
+                    },
+                )
+            }
     }
 
     /**
@@ -1136,11 +1232,25 @@ class ChatService(
         compressedCount: Int,
         keptCount: Int,
     ) {
+        appendSystemEvent(
+            conversationId,
+            context.getString(R.string.chat_compress_notice, compressedCount, keptCount),
+        )
+    }
+
+    /**
+     * 往聊框里追加一条「拍一拍」样式的系统事件提示（播放/暂停、压缩完成这类）。
+     *
+     * 打了 isSynthetic：生成时会被 [me.rerere.rikkahub.data.ai.GenerationLoop] 过滤掉，
+     * 不会发给模型；聊天记录里这条保留，用户能看到事件发生过。
+     * 正在生成时不动 messageNodes（会和流式消息抢索引），直接跳过这次提示。
+     */
+    suspend fun appendSystemEvent(conversationId: Uuid, text: String) {
+        if (text.isBlank()) return
         if (sessionManager.get(conversationId)?.isGenerating == true) {
-            Logging.log(TAG, "appendCompressionNotice: skip, conversation is generating")
+            Logging.log(TAG, "appendSystemEvent: skip, conversation is generating")
             return
         }
-        val text = context.getString(R.string.chat_compress_notice, compressedCount, keptCount)
         val notice = UIMessage(
             role = MessageRole.ASSISTANT,
             parts = buildPatParts(text),
@@ -1155,7 +1265,7 @@ class ChatService(
             updateConversationState(conversationId) { updated }
             saveConversation(conversationId, updated)
         }.onFailure {
-            Logging.log(TAG, "appendCompressionNotice: $it")
+            Logging.log(TAG, "appendSystemEvent: $it")
             Logging.log(TAG, it.stackTraceToString())
         }
     }
@@ -1254,23 +1364,32 @@ class ChatService(
     }
 
     /**
-     * 把工具在本轮生成中排队的「AI 主动消息」（表情包 / 拍一拍）逐条追加成新的 messageNode。
+     * 把工具在本轮生成中排队的「AI 主动消息」（表情包 / 拍一拍）落地成 messageNode，
+     * 插到本轮 AI 回复节点的**前面**：拍一拍行、表情包要出现在调用它们的那条消息之前。
      *
-     * 只能在生成结束后调用：生成期间 [Conversation.updateCurrentMessages] 按下标映射 messageNodes，
-     * 中途插入节点会导致流式回复写错位置。失败只打日志，不影响本轮已生成的回复落库。
+     * 只能在生成结束后调用：生成期间 Conversation.updateCurrentMessages 按下标映射 messageNodes，
+     * 中途插节点会导致流式回复写错位置。失败只打日志，不影响本轮已生成的回复落库。
      */
     private fun flushPendingOutgoingMessages(conversationId: Uuid) {
         val pending = runCatching { pendingOutgoing.drain(conversationId) }.getOrNull().orEmpty()
         if (pending.isEmpty()) return
         runCatching {
             updateConversationState(conversationId) { conversation ->
+                val newNodes = pending.map { parts ->
+                    UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = parts,
+                    ).toMessageNode()
+                }
+                val nodes = conversation.messageNodes
+                // 本轮 AI 回复是最后一个 assistant 节点，插它前面；没有就追加到末尾兜底
+                val insertAt = if (nodes.isNotEmpty() && nodes.last().role == MessageRole.ASSISTANT) {
+                    nodes.lastIndex
+                } else {
+                    nodes.size
+                }
                 conversation.copy(
-                    messageNodes = conversation.messageNodes + pending.map { parts ->
-                        UIMessage(
-                            role = MessageRole.ASSISTANT,
-                            parts = parts,
-                        ).toMessageNode()
-                    },
+                    messageNodes = nodes.take(insertAt) + newNodes + nodes.drop(insertAt),
                     updateAt = Instant.now(),
                 )
             }

@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import java.security.MessageDigest
 import kotlin.math.abs
 import androidx.compose.ui.layout.ContentScale
@@ -66,12 +68,13 @@ fun TextAvatar(
     text: String,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
-    color: Color = MaterialTheme.colorScheme.secondaryContainer
+    color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    shape: Shape = CircleShape,
 ) {
     Box(
         modifier = modifier
             .then(Modifier.size(32.dp))
-            .clip(shape = rememberAvatarShape(loading))
+            .clip(shape = rememberAvatarShape(loading, shape))
             .background(color),
         contentAlignment = Alignment.Center
     ) {
@@ -97,7 +100,8 @@ fun UIAvatar(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     onUpdate: ((Avatar) -> Unit)? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    shape: Shape = CircleShape,
 ) {
     val filesManager: FilesManager = koinInject()
     val context = LocalContext.current
@@ -147,7 +151,7 @@ fun UIAvatar(
 
     Box(modifier = modifier.then(Modifier.size(32.dp))) {
         Surface(
-            shape = rememberAvatarShape(loading),
+            shape = rememberAvatarShape(loading, shape),
             modifier = Modifier.fillMaxSize(),
             onClick = {
                 onClick?.invoke()

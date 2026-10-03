@@ -51,6 +51,41 @@ data class Assistant(
     val timeReminderIntervalMinutes: Int = 60,          // 时间提醒间隔（分钟，至少 1 分钟）
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val allowConversationPromptInjection: Boolean = false, // 允许对话单独绑定提示词注入
+    val avatarPairs: List<AvatarPair> = emptyList(),     // 该助手专属的成对头像库
+    val phoneAlbum: List<PhoneAlbumItem> = emptyList(),
+    val phoneMemos: List<PhoneMemo> = emptyList(),
+    val phoneUserRemark: String = "",
+    val phonePasscode: String = "0000",
+    val phoneLockWallpaper: String? = null,
+    val phoneHomeWallpaper: String? = null,
+)
+
+@Serializable
+data class AvatarPair(
+    val id: Uuid = Uuid.random(),
+    val name: String = "",
+    val aiAvatar: Avatar.Image,
+    val userAvatar: Avatar.Image,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Serializable
+data class PhoneAlbumItem(
+    val id: Uuid = Uuid.random(),
+    val uri: String,
+    val sourceImageId: String,
+    val caption: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Serializable
+data class PhoneMemo(
+    val id: Uuid = Uuid.random(),
+    val title: String = "",
+    val content: String = "",
+    val background: String = "#FFF4C2",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = createdAt,
 )
 
 @Serializable
@@ -64,6 +99,30 @@ data class QuickMessage(
 data class AssistantMemory(
     val id: Int,
     val content: String = "",
+)
+
+@Serializable
+enum class ContextMemoryKind {
+    PREFERENCE,
+    PERSON,
+    PROJECT,
+    DECISION,
+    TODO,
+    OTHER,
+}
+
+@Serializable
+data class ContextMemory(
+    val id: Int = 0,
+    val assistantId: String,
+    val content: String,
+    val kind: ContextMemoryKind = ContextMemoryKind.OTHER,
+    val sourceConversationId: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = createdAt,
+    val deletedAt: Long = 0L,
+    val confidence: Float = 0.5f,
+    val importance: Float = 0.5f,
 )
 
 @Serializable

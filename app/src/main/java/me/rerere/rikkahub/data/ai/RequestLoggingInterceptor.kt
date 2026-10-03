@@ -3,8 +3,8 @@ package me.rerere.rikkahub.data.ai
 import me.rerere.common.android.LogEntry
 import me.rerere.common.android.Logging
 import okhttp3.Interceptor
+import okhttp3.HttpUrl
 import okhttp3.Response
-import okio.Buffer
 
 class RequestLoggingInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -17,9 +17,8 @@ class RequestLoggingInterceptor : Interceptor {
 
         val requestHeaders = request.headers.toMap()
         val requestBody = request.body?.let { body ->
-            val buffer = Buffer()
-            body.writeTo(buffer)
-            buffer.readUtf8()
+            val bytes = runCatching { body.contentLength() }.getOrDefault(-1L)
+            if (bytes >= 0) "<omitted; $bytes bytes>" else "<omitted>"
         }
 
         val response: Response
@@ -32,7 +31,7 @@ class RequestLoggingInterceptor : Interceptor {
             Logging.logRequest(
                 LogEntry.RequestLog(
                     tag = "HTTP",
-                    url = request.url.toString(),
+                    url = request.url.redactedUrl(),
                     method = request.method,
                     requestHeaders = requestHeaders,
                     requestBody = requestBody,
@@ -48,7 +47,7 @@ class RequestLoggingInterceptor : Interceptor {
         Logging.logRequest(
             LogEntry.RequestLog(
                 tag = "HTTP",
-                url = request.url.toString(),
+                url = request.url.redactedUrl(),
                 method = request.method,
                 requestHeaders = requestHeaders,
                 requestBody = requestBody,
@@ -64,11 +63,28 @@ class RequestLoggingInterceptor : Interceptor {
 
     private fun okhttp3.Headers.toMap(): Map<String, String> {
         return names().associateWith { name ->
-            if (name.equals("Proxy-Authorization", ignoreCase = true)) {
+            if (name.equals("Authorization", ignoreCase = true) ||
+                name.equals("Proxy-Authorization", ignoreCase = true) ||
+                name.equals("X-Api-Key", ignoreCase = true) ||
+                name.equals("Api-Key", ignoreCase = true) ||
+                name.equals("x-goog-api-key", ignoreCase = true) ||
+                name.equals("X-Subscription-Token", ignoreCase = true) ||
+                name.equals("Cookie", ignoreCase = true) ||
+                name.equals("Set-Cookie", ignoreCase = true)
+            ) {
                 "██"
             } else {
                 get(name) ?: ""
             }
         }
+    }
+
+    private fun HttpUrl.redactedUrl(): String {
+        val sensitiveNames = setOf("key", "api_key", "apikey", "access_token", "token")
+        val builder = newBuilder()
+        queryParameterNames
+            .filter { it.lowercase() in sensitiveNames }
+            .forEach { builder.setQueryParameter(it, "██") }
+        return builder.build().toString()
     }
 }

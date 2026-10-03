@@ -6,14 +6,19 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkahub.data.datastore.ChatAvatarShape
 import kotlin.math.roundToInt
 
 @Composable
-fun rememberAvatarShape(loading: Boolean): Shape {
+fun rememberAvatarShape(
+    loading: Boolean,
+    idleShape: Shape = CircleShape,
+): Shape {
     val infiniteTransition = rememberInfiniteTransition()
     val rotateAngle = infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -25,5 +30,10 @@ fun rememberAvatarShape(loading: Boolean): Shape {
             ),
         )
     )
-    return if (loading) MaterialShapes.Cookie6Sided.toShape(rotateAngle.value.roundToInt()) else CircleShape
+    return if (loading) MaterialShapes.Cookie6Sided.toShape(rotateAngle.value.roundToInt()) else idleShape
+}
+
+fun ChatAvatarShape.toComposeAvatarShape(): Shape = when (this) {
+    ChatAvatarShape.CIRCLE -> CircleShape
+    ChatAvatarShape.ROUNDED_SQUARE -> RoundedCornerShape(percent = 15)
 }

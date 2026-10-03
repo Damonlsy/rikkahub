@@ -152,6 +152,7 @@ class FilesManager(
      * 否则之后删除消息会连带把库里那张也删掉。
      */
     fun copyChatFile(uri: Uri): Uri? {
+        var destination: File? = null
         return runCatching {
             val dir = context.filesDir.resolve(FileFolders.UPLOAD)
             if (!dir.exists()) {
@@ -160,6 +161,7 @@ class FilesManager(
             val sourceName = getFileNameFromUri(uri) ?: uri.lastPathSegment ?: "file"
             val sourceMime = getFileMimeType(uri)
             val file = dir.resolve(buildUuidFileName(displayName = sourceName, mimeType = sourceMime))
+            destination = file
             if (!file.exists()) {
                 file.createNewFile()
             }
@@ -180,6 +182,7 @@ class FilesManager(
             )
             file.toUri()
         }.onFailure {
+            destination?.delete()
             it.printStackTrace()
             Logging.log(TAG, "copyChatFile: $uri ${it.message} | ${it.stackTraceToString()}")
         }.getOrNull()

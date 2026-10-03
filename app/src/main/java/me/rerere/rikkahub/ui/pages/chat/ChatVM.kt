@@ -165,6 +165,22 @@ class ChatVM(
         }
     }
 
+    fun updateUserNickname(nickname: String): Job = viewModelScope.launch {
+        settingsStore.update { current ->
+            current.copy(displaySetting = current.displaySetting.copy(userNickname = nickname))
+        }
+    }
+
+    fun updateUserAvatar(avatar: Avatar): Job = viewModelScope.launch {
+        val oldAvatar = settingsStore.settingsFlow.value.displaySetting.userAvatar
+        settingsStore.update { current ->
+            current.copy(displaySetting = current.displaySetting.copy(userAvatar = avatar))
+        }
+        if (oldAvatar is Avatar.Image && oldAvatar != avatar) {
+            filesManager.deleteChatFiles(listOf(oldAvatar.url.toUri()))
+        }
+    }
+
     // 检查用户头像删除
     private fun checkUserAvatarDelete(oldSettings: Settings, newSettings: Settings) {
         val oldAvatar = oldSettings.displaySetting.userAvatar

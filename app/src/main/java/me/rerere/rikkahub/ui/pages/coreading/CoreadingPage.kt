@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.TopAppBarDefaults
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -33,12 +34,13 @@ private const val COREADING_URL = "https://rikkahub.local/assets/coreading/index
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CoreadingPage(conversationId: String? = null) {
+    val context = LocalContext.current.applicationContext
     val settingsStore: SettingsStore = koinInject()
     val chatService: ChatService = koinInject()
     val conversationRepo: ConversationRepository = koinInject()
     val memoryRepository: MemoryRepository = koinInject()
     val bridge = remember(conversationId) {
-        CoreadingBridge(settingsStore, chatService, conversationRepo, memoryRepository, conversationId)
+        CoreadingBridge(context, settingsStore, chatService, conversationRepo, memoryRepository, conversationId)
     }
 
     val state = rememberWebViewState(

@@ -10,7 +10,7 @@ import me.rerere.rikkahub.data.db.entity.PeriodRecordEntity
 @Dao
 interface PeriodDAO {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(record: PeriodRecordEntity)
+    suspend fun upsert(record: PeriodRecordEntity): Long
 
     @Query("SELECT * FROM period_records ORDER BY date ASC")
     fun listAll(): Flow<List<PeriodRecordEntity>>

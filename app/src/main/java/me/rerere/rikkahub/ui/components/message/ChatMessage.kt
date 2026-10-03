@@ -9,6 +9,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
@@ -45,6 +48,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -109,11 +115,9 @@ import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.urlDecode
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.glass.GlassDefaults
-import dev.chrisbanes.haze.glass.GlassStyle
-import dev.chrisbanes.haze.glass.OpticalSizeValue
-import dev.chrisbanes.haze.glass.hazeGlass
-import dev.chrisbanes.haze.glass.material3.Material3
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -208,6 +212,7 @@ fun ChatMessage(
         ProvideTextStyle(textStyle) {
             MessagePartsBlock(
                 assistant = assistant,
+                message = message,
                 role = message.role,
                 parts = message.parts,
                 annotations = message.annotations,
@@ -217,6 +222,8 @@ fun ChatMessage(
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
                 onUserMessageClick = if (message.role == MessageRole.USER && !isSticker) onEdit else null,
+                patActions = patActions,
+                onPat = onPat,
                 hazeState = hazeState,
             )
 
@@ -314,6 +321,7 @@ fun ChatMessage(
 @Composable
 private fun MessagePartsBlock(
     assistant: Assistant?,
+    message: UIMessage,
     role: MessageRole,
     model: Model?,
     parts: List<UIMessagePart>,
@@ -323,6 +331,8 @@ private fun MessagePartsBlock(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
+    patActions: List<PatActionEntity> = emptyList(),
+    onPat: ((patText: String) -> Unit)? = null,
     hazeState: HazeState? = null,
 ) {
     val context = LocalContext.current
@@ -333,6 +343,21 @@ private fun MessagePartsBlock(
     val hapticFeedback = LocalHapticFeedback.current
     val settings = LocalSettings.current
     val partsState by rememberUpdatedState(parts)
+
+    // 每条消息显示头像和名字：气泡分隔开的每一段都单独带一行头像+名字
+    val perBubbleAvatar = settings.displaySetting.perBubbleAvatarName && role == MessageRole.ASSISTANT
+    val perBubbleAiName = assistant?.name?.ifBlank { null } ?: "AI"
+    val perBubbleAvatarRow: @Composable () -> Unit = {
+        ChatMessageAssistantAvatar(
+            message = message,
+            loading = loading,
+            model = model,
+            assistant = assistant,
+            patActions = patActions,
+            aiName = perBubbleAiName,
+            onPat = { patText -> onPat?.invoke(patText) },
+        )
+    }
 
     val handleClickCitation: (String) -> Unit = remember {
         handler@{ citationId ->
@@ -440,6 +465,28 @@ private fun MessagePartsBlock(
             }
 
             is MessagePartBlock.ContentBlock -> key(block.index) {
+                val precedingBubbleCount = visibleParts.take(block.index).sumOf { precedingPart ->
+                    when (precedingPart) {
+                        is UIMessagePart.Text -> {
+                            if (isVoiceHiddenText(precedingPart.metadata) &&
+                                settings.displaySetting.aiVoiceReplyMode == "voice_only"
+                            ) {
+                                0
+                            } else if (role == MessageRole.ASSISTANT &&
+                                settings.displaySetting.assistantSplitParagraphs
+                            ) {
+                                splitAssistantParagraphs(precedingPart.text).size
+                            } else {
+                                1
+                            }
+                        }
+                        is UIMessagePart.Image,
+                        is UIMessagePart.Audio,
+                        is UIMessagePart.Video,
+                        is UIMessagePart.Document -> 1
+                        else -> 0
+                    }
+                }
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
                         // AI语音回复（纯语音模式）：文字部分只在该模式下隐藏，切回文字模式会重新显示
@@ -449,35 +496,34 @@ private fun MessagePartsBlock(
                             if (role == MessageRole.USER) {
                                 val isPixel = settings.displaySetting.userBubbleStyle == "pixel"
                                 val isGlass = !isPixel && settings.displaySetting.userBubbleStyle == "glass"
-                                val glassTint = Color(0xFF2E5E96)
                                 val glassRounded = RoundedCornerShape(12.dp, 12.dp, 2.dp, 12.dp)
-                                Surface(
-                                        modifier = Modifier.animateContentSize().then(
-                                            if (isGlass) {
-                                                Modifier
-                                                    .then(
-                                                        if (hazeState != null) {
-                                                            glassBubbleModifier(hazeState, glassRounded, glassTint, settings.displaySetting.bubbleOpacity)
-                                                        } else {
-                                                            Modifier
-                                                        }
-                                                    )
-                                                    .background(glassGradient(true), glassRounded)
-                                            } else {
-                                                Modifier
-                                            }
-                                        ),
+                                if (isGlass) {
+                                    GlassMessageBubble(
+                                        isUser = true,
+                                        shape = glassRounded,
+                                        hazeState = hazeState,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        onClick = { onUserMessageClick?.invoke() },
+                                    ) {
+                                        MarkdownBlock(
+                                            content = part.text.replaceRegexes(
+                                                assistant = assistant,
+                                                scope = AssistantAffectScope.USER,
+                                                visual = true,
+                                            ),
+                                            onClickCitation = handleClickCitation,
+                                        )
+                                    }
+                                } else {
+                                    Surface(
+                                        modifier = Modifier.animateContentSize(),
                                         shape = if (isPixel) {
                                             RoundedCornerShape(0.dp)
-                                        } else if (isGlass) {
-                                            glassRounded
                                         } else {
                                             RoundedCornerShape(16.dp)
                                         },
                                         color = if (isPixel) {
                                             if (isDarkTheme) Color.Black else Color.White
-                                        } else if (isGlass) {
-                                            Color.Transparent
                                         } else {
                                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity)
                                         },
@@ -488,8 +534,6 @@ private fun MessagePartsBlock(
                                         },
                                         border = if (isPixel) {
                                             BorderStroke(2.dp, if (isDarkTheme) Color.White else Color.Black)
-                                        } else if (isGlass) {
-                                            BorderStroke(1.dp, Color(0x2E96C8F5))
                                         } else {
                                             null
                                         },
@@ -506,6 +550,7 @@ private fun MessagePartsBlock(
                                             )
                                         }
                                     }
+                                }
                             } else {
                                 val splitEnabled = settings.displaySetting.assistantSplitParagraphs
                                 val paragraphs = if (splitEnabled) {
@@ -519,37 +564,40 @@ private fun MessagePartsBlock(
                                 if (useBubble) {
                                     val isPixel = style == "pixel"
                                     val isGlass = !isPixel && style == "glass"
-                                    val glassTint = Color(0xFF2A5488)
                                     val glassRounded = RoundedCornerShape(12.dp, 12.dp, 12.dp, 2.dp)
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        paragraphs.forEach { paragraph ->
-                                            Surface(
-                                                modifier = Modifier.animateContentSize().then(
-                                                    if (isGlass) {
-                                                        Modifier
-                                                            .then(
-                                                                if (hazeState != null) {
-                                                                    glassBubbleModifier(hazeState, glassRounded, glassTint, settings.displaySetting.bubbleOpacity)
-                                                                } else {
-                                                                    Modifier
-                                                                }
-                                                            )
-                                                            .background(glassGradient(false), glassRounded)
+                                        paragraphs.forEachIndexed { paragraphIndex, paragraph ->
+                                            if (perBubbleAvatar && precedingBubbleCount + paragraphIndex > 0) {
+                                                key(block.index, paragraphIndex, "avatar") {
+                                                    perBubbleAvatarRow()
+                                                }
+                                            }
+                                            if (isGlass) {
+                                                GlassMessageBubble(
+                                                    isUser = false,
+                                                    shape = glassRounded,
+                                                    hazeState = hazeState,
+                                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                                ) {
+                                                    MarkdownBlock(
+                                                        content = paragraph.replaceRegexes(
+                                                            assistant = assistant,
+                                                            scope = AssistantAffectScope.ASSISTANT,
+                                                            visual = true,
+                                                        ),
+                                                        onClickCitation = handleClickCitation,
+                                                    )
+                                                }
+                                            } else {
+                                                Surface(
+                                                    modifier = Modifier.animateContentSize(),
+                                                    shape = if (isPixel) {
+                                                        RoundedCornerShape(0.dp)
                                                     } else {
-                                                        Modifier
-                                                    }
-                                                ),
-                                                shape = if (isPixel) {
-                                                    RoundedCornerShape(0.dp)
-                                                } else if (isGlass) {
-                                                    glassRounded
-                                                } else {
-                                                    RoundedCornerShape(16.dp)
-                                                },
+                                                        RoundedCornerShape(16.dp)
+                                                    },
                                                     color = if (isPixel) {
                                                         if (isDarkTheme) Color.Black else Color.White
-                                                    } else if (isGlass) {
-                                                        Color.Transparent
                                                     } else {
                                                         MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity)
                                                     },
@@ -560,8 +608,6 @@ private fun MessagePartsBlock(
                                                     },
                                                     border = if (isPixel) {
                                                         BorderStroke(2.dp, if (isDarkTheme) Color.White else Color.Black)
-                                                    } else if (isGlass) {
-                                                        BorderStroke(1.dp, Color(0x2E96C8F5))
                                                     } else {
                                                         null
                                                     },
@@ -578,9 +624,13 @@ private fun MessagePartsBlock(
                                                     }
                                                 }
                                             }
+                                            }
                                         }
-                                    }
+                                }
                                 else {
+                                    if (perBubbleAvatar && precedingBubbleCount > 0) {
+                                        perBubbleAvatarRow()
+                                    }
                                     MarkdownBlock(
                                         content = part.text.replaceRegexes(
                                             assistant = assistant,
@@ -611,6 +661,7 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Video -> {
+                        if (perBubbleAvatar && precedingBubbleCount > 0) perBubbleAvatarRow()
                         Surface(
                             tonalElevation = 2.dp,
                             onClick = {
@@ -634,6 +685,7 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Audio -> {
+                        if (perBubbleAvatar && precedingBubbleCount > 0) perBubbleAvatarRow()
                         VoiceBarBubble(
                             url = part.url,
                             metadata = part.metadata,
@@ -642,6 +694,7 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Image -> {
+                        if (perBubbleAvatar && precedingBubbleCount > 0) perBubbleAvatarRow()
                         val isImageLoading =
                             part.url.isBlank() || part.url.matches(Regex("^data:image/[^;]*;base64,\\s*$"))
                         if (isImageLoading) {
@@ -658,12 +711,13 @@ private fun MessagePartsBlock(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .clip(MaterialTheme.shapes.medium)
-                                    .height(if (stickerMessage) 180.dp else 72.dp)
+                                    .height(if (stickerMessage) 120.dp else 72.dp)
                             )
                         }
                     }
 
                     is UIMessagePart.Document -> {
+                        if (perBubbleAvatar && precedingBubbleCount > 0) perBubbleAvatarRow()
                         Surface(
                             tonalElevation = 2.dp,
                             onClick = {
@@ -800,30 +854,80 @@ private fun glassGradient(isUser: Boolean): Brush = Brush.linearGradient(
 )
 
 /**
+ * 玻璃描边不再是均匀色：左上受光面亮、右下背光面暗，模拟真实玻璃边缘的透光不均。
+ * user 偏亮一档，AI 偏沉一档，与主体渐变的明暗关系保持一致。
+ */
+private fun glassBorderBrush(isUser: Boolean): Brush = Brush.linearGradient(
+    colors = if (isUser) {
+        listOf(Color(0x6BA9D6FF), Color(0x2E96C8F5), Color(0x16123052))
+    } else {
+        listOf(Color(0x5296C8F5), Color(0x2282B4E8), Color(0x100C2038))
+    },
+)
+
+/** 顶缘高光：从上往下衰减的一条细光线，叠在描边外半层，是玻璃「厚度感」的来源。 */
+private fun glassSheenBrush(): Brush = Brush.verticalGradient(
+    colors = listOf(Color(0x33FFFFFF), Color(0x00FFFFFF)),
+)
+
+@Composable
+private fun GlassMessageBubble(
+    isUser: Boolean,
+    shape: RoundedCornerShape,
+    hazeState: HazeState?,
+    contentColor: Color,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .animateContentSize()
+            .clip(shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+    ) {
+        // Compose equivalent of `.message::after { position:absolute; inset:0 }`.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(shape)
+                .then(
+                    if (hazeState != null) {
+                        Modifier.hazeBlur(
+                            input = HazeInput.Sources(hazeState),
+                            style = HazeBlurStyle {
+                                backgroundColor(Color.Transparent)
+                                blurRadius(12.dp)
+                                colorEffects(
+                                    listOf(
+                                        HazeColorEffect.colorFilter(
+                                            ColorFilter.colorMatrix(
+                                                ColorMatrix().apply { setToSaturation(1.6f) },
+                                            ),
+                                        ),
+                                    ),
+                                )
+                            },
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
+                .background(glassGradient(isUser), shape)
+                // 外层 1dp 渐变描边做玻璃边缘；内叠 0.5dp 顶部高光只盖住描边外半层，
+                // 形成外亮内暗的双层边缘，即 iOS 玻璃的 rim + sheen。
+                .border(1.dp, glassBorderBrush(isUser), shape)
+                .border(0.5.dp, glassSheenBrush(), shape),
+        )
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+                content()
+            }
+        }
+    }
+}
+/**
  * 拍一拍：一行居中的系统小字，例如「AI摸了摸你」。
  */
-@Composable
-private fun glassBubbleModifier(
-    hazeState: HazeState?,
-    cornerShape: RoundedCornerShape,
-    tint: Color,
-    opacity: Float,
-): Modifier {
-    if (hazeState == null) return Modifier
-    return Modifier.hazeGlass(
-        input = HazeInput.Sources(hazeState),
-        style = GlassStyle.Material3(
-            containerColor = tint.copy(alpha = opacity),
-            tint = tint.copy(alpha = 0.72f * opacity),
-        ) {
-            optics(GlassDefaults.optics.copy(
-                blurRadius = OpticalSizeValue.Fixed(14.dp),
-                depth = OpticalSizeValue.Fixed(0.5f),
-            ))
-            shape(cornerShape)
-        },
-    )
-}
 @Composable
 private fun PatMessageRow(text: String) {
     Box(

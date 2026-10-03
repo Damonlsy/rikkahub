@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.setting
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -10,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -37,6 +39,9 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.workflow.WorkflowStore
 import me.rerere.rikkahub.service.AppLockAccessibilityService
 import me.rerere.rikkahub.service.WorkflowService
+import me.rerere.rikkahub.service.AiReminderWorker
+import me.rerere.rikkahub.service.DailyAiPublishWorker
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -50,11 +55,20 @@ fun WorkflowSettingPage(
     onBack: () -> Unit,
     workflowStore: WorkflowStore = koinInject(),
     workflowService: WorkflowService = koinInject(),
+    settingsStore: SettingsStore = koinInject(),
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val config by workflowStore.config.collectAsStateWithLifecycle()
+    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    val daily = settings.dailyAiPublish
+    var dailyHour by remember(daily.hour) { mutableFloatStateOf(daily.hour.toFloat()) }
+    var dailyMinute by remember(daily.minute) { mutableFloatStateOf(daily.minute.toFloat()) }
+    val reminder = settings.dailyReminder
+    var remindHour by remember(reminder.hour) { mutableFloatStateOf(reminder.hour.toFloat()) }
+    var remindMinute by remember(reminder.minute) { mutableFloatStateOf(reminder.minute.toFloat()) }
+    var reminderContent by remember(reminder.content) { mutableStateOf(reminder.content) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     var refreshKey by remember { mutableIntStateOf(0) }
@@ -159,6 +173,200 @@ fun WorkflowSettingPage(
                                 checked = config.aiDecidesSend,
                                 onCheckedChange = { value ->
                                     workflowStore.update { it.copy(aiDecidesSend = value) }
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+
+            item("dailyAiPublish") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("每日创作") },
+                ) {
+                    item(
+                        headlineContent = { Text("每天自动写日记和发动态") },
+                        supportingContent = { Text("在设定时间附近，AI 自动写一篇日记，并发布到应用内朋友圈。受系统省电影响可能稍有延迟。") },
+                        trailingContent = {
+                            Switch(
+                                checked = daily.enabled,
+                                onCheckedChange = { enabled ->
+                                    scope.launch {
+                                        settingsStore.update { current ->
+                                            current.copy(dailyAiPublish = current.dailyAiPublish.copy(enabled = enabled))
+                                        }
+                                        if (enabled) DailyAiPublishWorker.scheduleNext(context, daily.hour, daily.minute)
+                                        else DailyAiPublishWorker.cancel(context)
+                                    }
+                                },
+                            )
+                        },
+                    )
+                    item(
+                        headlineContent = { Text("执行时间：%02d:%02d".format(dailyHour.roundToInt(), dailyMinute.roundToInt())) },
+                        supportingContent = {
+                            Column {
+                                Text("小时")
+                                Slider(
+                                    value = dailyHour,
+                                    onValueChange = { dailyHour = it },
+                                    valueRange = 0f..23f,
+                                    steps = 22,
+                                    onValueChangeFinished = {
+                                        scope.launch {
+                                            settingsStore.update { current -> current.copy(dailyAiPublish = current.dailyAiPublish.copy(hour = dailyHour.roundToInt())) }
+                                            if (daily.enabled) DailyAiPublishWorker.scheduleNext(context, dailyHour.roundToInt(), dailyMinute.roundToInt())
+                                        }
+                                    },
+                                )
+                                Text("分钟")
+                                Slider(
+                                    value = dailyMinute,
+                                    onValueChange = { dailyMinute = it },
+                                    valueRange = 0f..59f,
+                                    onValueChangeFinished = {
+                                        scope.launch {
+                                            settingsStore.update { current -> current.copy(dailyAiPublish = current.dailyAiPublish.copy(minute = dailyMinute.roundToInt())) }
+                                            if (daily.enabled) DailyAiPublishWorker.scheduleNext(context, dailyHour.roundToInt(), dailyMinute.roundToInt())
+                                        }
+                                    },
+                                )
+                            }
+                        },
+                    )
+                    item(
+                        headlineContent = { Text("同时发布应用内朋友圈") },
+                        supportingContent = { Text("关闭后只写日记，不发动态。") },
+                        trailingContent = {
+                            Switch(
+                                checked = daily.publishMoment,
+                                onCheckedChange = { enabled ->
+                                    scope.launch {
+                                        settingsStore.update { current -> current.copy(dailyAiPublish = current.dailyAiPublish.copy(publishMoment = enabled)) }
+                                    }
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+
+            item("dailyReminder") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("每日提醒") },
+                ) {
+                    item(
+                        headlineContent = { Text("每天到点提醒我一件事") },
+                        supportingContent = { Text("在设定时间把下面写好的内容交给 AI，AI 自己判断要不要照做。受系统省电影响可能稍有延迟。") },
+                        trailingContent = {
+                            Switch(
+                                checked = reminder.enabled,
+                                onCheckedChange = { enabled ->
+                                    scope.launch {
+                                        settingsStore.update { current ->
+                                            current.copy(dailyReminder = current.dailyReminder.copy(enabled = enabled))
+                                        }
+                                        if (enabled) AiReminderWorker.scheduleNext(context, reminder.hour, reminder.minute)
+                                        else AiReminderWorker.cancel(context)
+                                    }
+                                },
+                            )
+                        },
+                    )
+                    item(
+                        headlineContent = { Text("提醒时间：%02d:%02d".format(remindHour.roundToInt(), remindMinute.roundToInt())) },
+                        supportingContent = {
+                            Column {
+                                Text("小时")
+                                Slider(
+                                    value = remindHour,
+                                    onValueChange = { remindHour = it },
+                                    valueRange = 0f..23f,
+                                    steps = 22,
+                                    onValueChangeFinished = {
+                                        scope.launch {
+                                            settingsStore.update { current -> current.copy(dailyReminder = current.dailyReminder.copy(hour = remindHour.roundToInt())) }
+                                            if (reminder.enabled) AiReminderWorker.scheduleNext(context, remindHour.roundToInt(), remindMinute.roundToInt())
+                                        }
+                                    },
+                                )
+                                Text("分钟")
+                                Slider(
+                                    value = remindMinute,
+                                    onValueChange = { remindMinute = it },
+                                    valueRange = 0f..59f,
+                                    onValueChangeFinished = {
+                                        scope.launch {
+                                            settingsStore.update { current -> current.copy(dailyReminder = current.dailyReminder.copy(minute = remindMinute.roundToInt())) }
+                                            if (reminder.enabled) AiReminderWorker.scheduleNext(context, remindHour.roundToInt(), remindMinute.roundToInt())
+                                        }
+                                    },
+                                )
+                            }
+                        },
+                    )
+                    item(
+                        headlineContent = { Text("提醒内容") },
+                        supportingContent = {
+                            Column {
+                                Text("到时间后，这段文字会作为一条消息发给 AI。")
+                                OutlinedTextField(
+                                    value = reminderContent,
+                                    onValueChange = { reminderContent = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp),
+                                    minLines = 3,
+                                    maxLines = 6,
+                                    placeholder = { Text("例如：起来活动一下，顺便看看有没有新消息") },
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(top = 4.dp),
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            scope.launch {
+                                                settingsStore.update { current ->
+                                                    current.copy(dailyReminder = current.dailyReminder.copy(content = reminderContent.trim()))
+                                                }
+                                            }
+                                        },
+                                    ) {
+                                        Text("保存提醒内容")
+                                    }
+                                    if (reminder.content.isNotEmpty()) {
+                                        TextButton(
+                                            onClick = {
+                                                reminderContent = ""
+                                                scope.launch {
+                                                    settingsStore.update { current ->
+                                                        current.copy(dailyReminder = current.dailyReminder.copy(content = ""))
+                                                    }
+                                                }
+                                            },
+                                        ) {
+                                            Text("清空")
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    item(
+                        headlineContent = { Text("允许 AI 决定要不要执行") },
+                        supportingContent = { Text("开启后 AI 可以判断这条提醒当下没用，直接回一句不执行；关闭则每次都会照做。") },
+                        trailingContent = {
+                            Switch(
+                                checked = reminder.aiCanSkip,
+                                onCheckedChange = { value ->
+                                    scope.launch {
+                                        settingsStore.update { current ->
+                                            current.copy(dailyReminder = current.dailyReminder.copy(aiCanSkip = value))
+                                        }
+                                    }
                                 },
                             )
                         },

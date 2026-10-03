@@ -32,25 +32,24 @@ class AssistantVM(
 
     fun addAssistant(assistant: Assistant) {
         viewModelScope.launch {
-            val settings = settings.value
-            settingsStore.update(
-                settings.copy(
-                    assistants = settings.assistants.plus(assistant)
-                )
-            )
+            settingsStore.update { current ->
+                current.copy(assistants = current.assistants + assistant)
+            }
         }
     }
 
     fun removeAssistant(assistant: Assistant) {
         viewModelScope.launch {
-            cleanupAssistantFiles(assistant)
-
-            val settings = settings.value
-            settingsStore.update(
-                settings.copy(
-                    assistants = settings.assistants.filter { it.id != assistant.id }
+            settingsStore.update { current ->
+                val remaining = current.assistants.filter { it.id != assistant.id }
+                current.copy(
+                    assistants = remaining,
+                    assistantId = if (current.assistantId == assistant.id) {
+                        remaining.firstOrNull()?.id ?: current.assistantId
+                    } else current.assistantId,
                 )
-            )
+            }
+            cleanupAssistantFiles(assistant)
             memoryRepository.deleteMemoriesOfAssistant(assistant.id.toString())
             conversationRepo.deleteConversationOfAssistant(assistant.id)
         }
@@ -60,6 +59,13 @@ class AssistantVM(
         val uris = buildList {
             (assistant.avatar as? Avatar.Image)?.let { add(it.url.toUri()) }
             assistant.background?.let { add(it.toUri()) }
+            assistant.avatarPairs.forEach { pair ->
+                add(pair.aiAvatar.url.toUri())
+                add(pair.userAvatar.url.toUri())
+            }
+            assistant.phoneAlbum.forEach { photo -> add(photo.uri.toUri()) }
+            assistant.phoneLockWallpaper?.let { add(it.toUri()) }
+            assistant.phoneHomeWallpaper?.let { add(it.toUri()) }
         }
 
         if (uris.isNotEmpty()) {
@@ -67,19 +73,29 @@ class AssistantVM(
         }
     }
 
-    fun copyAssistant(assistant: Assistant) {
+    fun copyAssistant(assistant: Assistant, copyMemories: Boolean = false) {
         viewModelScope.launch {
-            val settings = settings.value
             val copiedAssistant = assistant.copy(
                 id = kotlin.uuid.Uuid.random(),
                 name = "${assistant.name} (Clone)",
                 avatar = if(assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
+                avatarPairs = emptyList(),
+                phoneAlbum = emptyList(),
+                phoneMemos = emptyList(),
+                phoneUserRemark = "",
+                phoneLockWallpaper = null,
+                phoneHomeWallpaper = null,
+                background = null,
             )
-            settingsStore.update(
-                settings.copy(
-                    assistants = settings.assistants.plus(copiedAssistant)
+            settingsStore.update { current ->
+                current.copy(assistants = current.assistants + copiedAssistant)
+            }
+            if (copyMemories) {
+                memoryRepository.copyMemories(
+                    fromAssistantId = assistant.id.toString(),
+                    toAssistantId = copiedAssistant.id.toString(),
                 )
-            )
+            }
         }
     }
 

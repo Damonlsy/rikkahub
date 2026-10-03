@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.animation.ObjectAnimator
 import android.app.ActivityManager
 import android.content.Intent
@@ -9,16 +10,20 @@ import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Outline
+import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
 import android.view.Gravity
+import android.view.Display
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -44,6 +49,10 @@ import me.rerere.rikkahub.ui.theme.findThemeById
 import me.rerere.rikkahub.utils.circularBitmap
 import me.rerere.rikkahub.utils.decodeAvatarBitmap
 import org.koin.android.ext.android.inject
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * 应用锁 + 屏幕内容读取 + 定时工作流的悬浮头像。
@@ -322,6 +331,129 @@ class AppLockAccessibilityService : AccessibilityService() {
         return sb.toString().trim().takeIf { it.isNotBlank() }
     }
 
+    private fun scanInteractiveNodes(): String? {
+        val root = rootInActiveWindow ?: return null
+        val lines = mutableListOf<String>()
+        var visited = 0
+        fun walk(node: AccessibilityNodeInfo?, depth: Int) {
+            if (node == null || depth > 40 || visited++ >= 400 || lines.size >= 120) return
+            if (!node.isPassword && (node.isClickable || node.isEditable || node.isCheckable || node.isScrollable)) {
+                val bounds = Rect().also(node::getBoundsInScreen)
+                val label = node.text?.toString()?.takeIf { it.isNotBlank() }
+                    ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() }
+                    ?: node.hintText?.toString()?.takeIf { it.isNotBlank() }
+                    ?: node.className?.toString()?.substringAfterLast('.')
+                    ?: "element"
+                val flags = buildList {
+                    if (node.isClickable) add("clickable")
+                    if (node.isEditable) add("editable")
+                    if (node.isCheckable) add(if (node.isChecked) "checked" else "unchecked")
+                    if (node.isScrollable) add("scrollable")
+                }.joinToString(",")
+                lines += "${label.replace('\n', ' ').take(120)} | center=${bounds.centerX()},${bounds.centerY()} | $flags"
+            }
+            for (i in 0 until node.childCount) walk(node.getChild(i), depth + 1)
+        }
+        runCatching { walk(root, 0) }
+        return lines.joinToString("\n").takeIf { it.isNotBlank() }
+    }
+
+    private fun clickTextInternal(text: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val candidates = root.findAccessibilityNodeInfosByText(text)
+        return candidates.firstNotNullOfOrNull { candidate ->
+            var node: AccessibilityNodeInfo? = candidate
+            while (node != null) {
+                if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return@firstNotNullOfOrNull true
+                node = node.parent
+            }
+            null
+        } == true
+    }
+
+    private fun setTextInternal(text: String, target: String?): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val node = target?.takeIf { it.isNotBlank() }
+            ?.let { root.findAccessibilityNodeInfosByText(it).firstOrNull { item -> item.isEditable } }
+            ?: root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
+            ?: findEditableNode(root)
+            ?: return false
+        return node.performAction(
+            AccessibilityNodeInfo.ACTION_SET_TEXT,
+            Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            },
+        )
+    }
+
+    private fun submitTextInternal(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        val root = rootInActiveWindow ?: return false
+        val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
+            ?: findEditableNode(root)
+            ?: return false
+        return node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+    }
+
+    private fun findEditableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null || node.isPassword) return null
+        if (node.isEditable) return node
+        for (i in 0 until node.childCount) findEditableNode(node.getChild(i))?.let { return it }
+        return null
+    }
+
+    private suspend fun gestureInternal(path: Path, durationMillis: Long): Boolean =
+        suspendCancellableCoroutine { continuation ->
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, durationMillis))
+                .build()
+            val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(true)
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(false)
+                }
+            }, null)
+            if (!accepted && continuation.isActive) continuation.resume(false)
+        }
+
+    private suspend fun tapInternal(x: Float, y: Float, durationMillis: Long): Boolean {
+        val path = Path().apply { moveTo(x, y) }
+        return gestureInternal(path, durationMillis)
+    }
+
+    private suspend fun swipeInternal(x1: Float, y1: Float, x2: Float, y2: Float, durationMillis: Long): Boolean {
+        val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
+        return gestureInternal(path, durationMillis)
+    }
+
+    private suspend fun screenshotInternal(): File? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return suspendCancellableCoroutine { continuation ->
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    val hardware = screenshot.hardwareBuffer
+                    val bitmap = android.graphics.Bitmap.wrapHardwareBuffer(hardware, screenshot.colorSpace)
+                        ?.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                    hardware.close()
+                    val file = bitmap?.let {
+                        File(cacheDir, "screen_${System.currentTimeMillis()}.jpg").also { output ->
+                            FileOutputStream(output).use { stream -> it.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, stream) }
+                            it.recycle()
+                        }
+                    }
+                    if (continuation.isActive) continuation.resume(file)
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            })
+        }
+    }
+
     // ---- 悬浮头像 ----
 
     private fun showCompanionInternal(name: String, avatar: Avatar, conversationId: String?): Boolean {
@@ -492,6 +624,28 @@ class AppLockAccessibilityService : AccessibilityService() {
 
         /** 读取当前屏幕窗口中的文字（需无障碍服务已连接且开启内容读取）。 */
         fun captureScreenText(): String? = instance?.readActiveWindowText()
+
+        fun isConnected(): Boolean = instance != null
+
+        fun foregroundPackage(): String? = instance?.rootInActiveWindow?.packageName?.toString()
+
+        fun scanInteractiveUi(): String? = instance?.scanInteractiveNodes()
+
+        fun clickText(text: String): Boolean = instance?.clickTextInternal(text) ?: false
+
+        fun setText(text: String, target: String? = null): Boolean = instance?.setTextInternal(text, target) ?: false
+
+        fun submitText(): Boolean = instance?.submitTextInternal() ?: false
+
+        fun globalAction(action: Int): Boolean = instance?.performGlobalAction(action) ?: false
+
+        suspend fun tap(x: Float, y: Float, durationMillis: Long = 60L): Boolean =
+            instance?.tapInternal(x, y, durationMillis) ?: false
+
+        suspend fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMillis: Long): Boolean =
+            instance?.swipeInternal(x1, y1, x2, y2, durationMillis) ?: false
+
+        suspend fun screenshot(): File? = instance?.screenshotInternal()
 
         /**
          * 显示助手悬浮头像（右侧中央，钟摆摆动，10 秒后消失）。

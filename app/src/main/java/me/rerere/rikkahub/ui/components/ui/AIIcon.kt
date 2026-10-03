@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.components.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -10,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -29,6 +31,7 @@ private fun AIIcon(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    shape: Shape = CircleShape,
 ) {
     val contentColor = LocalContentColor.current
     val context = LocalContext.current
@@ -46,7 +49,7 @@ private fun AIIcon(
     }
     Surface(
         modifier = modifier.size(24.dp),
-        shape = rememberAvatarShape(loading),
+        shape = rememberAvatarShape(loading, shape),
         color = color,
     ) {
         AsyncImage(
@@ -63,9 +66,10 @@ fun AutoAIIcon(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    shape: Shape = CircleShape,
 ) {
     val path = remember(name) { computeAIIconByName(name) } ?: run {
-        TextAvatar(text = name, modifier = modifier, loading = loading, color = color)
+        TextAvatar(text = name, modifier = modifier, loading = loading, color = color, shape = shape)
         return
     }
     AIIcon(
@@ -74,6 +78,7 @@ fun AutoAIIcon(
         modifier = modifier,
         loading = loading,
         color = color,
+        shape = shape,
     )
 }
 

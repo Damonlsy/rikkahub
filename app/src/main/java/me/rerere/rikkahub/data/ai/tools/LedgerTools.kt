@@ -96,9 +96,11 @@ fun buildLedgerTools(dao: LedgerDAO): List<Tool> = listOf(
                                 all.forEach { e ->
                                     add(buildJsonObject {
                                         put("wallet", e.wallet)
+                                        put("recorder", e.recorder.ifBlank { e.wallet })
                                         put("kind", e.kind)
                                         put("amount", e.amount / 100.0)
                                         put("note", e.note)
+                                        put("created_at", e.createdAt)
                                     })
                                 }
                             }
@@ -123,6 +125,7 @@ fun buildLedgerTools(dao: LedgerDAO): List<Tool> = listOf(
                             kind = kind,
                             amount = (amount * 100).roundToLong(),
                             note = note.trim(),
+                            recorder = "ai",
                             createdAt = System.currentTimeMillis(),
                         )
                     )
@@ -150,6 +153,7 @@ fun buildLedgerTools(dao: LedgerDAO): List<Tool> = listOf(
                             kind = LEDGER_KIND_TRANSFER_OUT,
                             amount = cents,
                             note = note.trim(),
+                            recorder = "ai",
                             createdAt = now,
                         )
                     )
@@ -160,6 +164,7 @@ fun buildLedgerTools(dao: LedgerDAO): List<Tool> = listOf(
                             kind = LEDGER_KIND_TRANSFER_IN,
                             amount = cents,
                             note = note.trim(),
+                            recorder = "ai",
                             createdAt = now,
                         )
                     )

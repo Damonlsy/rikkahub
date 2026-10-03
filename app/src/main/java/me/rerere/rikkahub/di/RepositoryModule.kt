@@ -11,6 +11,8 @@ import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.data.repository.GenMediaRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.repository.AvatarPairRepository
+import me.rerere.rikkahub.data.repository.AIPhoneRepository
 import me.rerere.workspace.ProotShellRunner
 import me.rerere.workspace.RootfsInstaller
 import me.rerere.workspace.WorkspaceBindMount
@@ -41,6 +43,14 @@ val repositoryModule = module {
 
     single {
         FavoriteRepository(get())
+    }
+
+    single {
+        AvatarPairRepository(get(), get())
+    }
+
+    single {
+        AIPhoneRepository(get(), get(), get())
     }
 
     single {

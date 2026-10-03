@@ -26,8 +26,8 @@ android {
         applicationId = "com.damonlsy.rikkahub"
         minSdk = 26
         targetSdk = 37
-    versionCode = 193
-    versionName = "2.6.3"
+        versionCode = 193
+        versionName = "2.6.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -81,11 +81,20 @@ android {
             }
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
+            buildConfigField("boolean", "DEVICE_PRIVATE_AI_LISTENING", "false")
         }
         debug {
             applicationIdSuffix = ".debug"
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
+            buildConfigField("boolean", "DEVICE_PRIVATE_AI_LISTENING", "false")
+        }
+        create("devicePrivate") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("debug")
+            buildConfigField("boolean", "DEVICE_PRIVATE_AI_LISTENING", "true")
         }
     }
     compileOptions {
@@ -313,7 +322,7 @@ dependencies {
     implementation(project(":highlight"))
     implementation(project(":search"))
     implementation(project(":speech"))
-    implementation(project(":videogen"))
+    implementation(project(":mediagen"))
     implementation(project(":common"))
     implementation(project(":material3"))
     implementation(project(":workspace"))

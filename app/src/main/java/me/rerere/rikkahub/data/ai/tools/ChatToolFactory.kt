@@ -8,13 +8,16 @@ import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.PendingOutgoingMessages
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.db.dao.AnniversaryDAO
 import me.rerere.rikkahub.data.db.dao.DiaryDAO
 import me.rerere.rikkahub.data.db.dao.LedgerDAO
+import me.rerere.rikkahub.data.db.dao.PeriodDAO
 import me.rerere.rikkahub.data.db.dao.MomentDAO
 import me.rerere.rikkahub.data.db.dao.PatActionDAO
 import me.rerere.rikkahub.data.db.dao.StickerDAO
@@ -23,6 +26,8 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.AvatarPairRepository
+import me.rerere.rikkahub.data.repository.AIPhoneRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.StudyRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -50,7 +55,11 @@ class ChatToolFactory(
     private val mcpManager: McpManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
+    private val avatarPairRepository: AvatarPairRepository,
+    private val aiPhoneRepository: AIPhoneRepository,
     private val diaryDao: DiaryDAO,
+    private val periodDao: PeriodDAO,
+    private val anniversaryDao: AnniversaryDAO,
     private val ledgerDao: LedgerDAO,
     private val momentDao: MomentDAO,
     private val appLockStore: AppLockStore,
@@ -87,8 +96,20 @@ class ChatToolFactory(
             addAll(createSearchTools(settings))
         }
         addAll(localTools.getTools(assistant.localTools))
+        // 成对头像库：AI 可查看头像对，并在用户批准后更换自己的头像
+        addAll(
+            buildAvatarPairTools(
+                assistantId = assistant.id,
+                repository = avatarPairRepository,
+                supportsVision = Modality.IMAGE in model.inputModalities,
+            )
+        )
+        // AI 小手机：AI 自主管理相册、备忘录和用户备注
+        addAll(buildPhoneTools(assistant, aiPhoneRepository))
         // 日记本工具：AI 可读写日记并评论
         addAll(buildDiaryTools(diaryDao))
+        // 日历工具：AI 可自主添加/删除纪念日与经期记录
+        addAll(buildCalendarTools(periodDao, anniversaryDao))
         // 记账本工具：AI 可记账、转赠、查看账单
         addAll(buildLedgerTools(ledgerDao))
         // 朋友圈工具：AI 可发动态、点赞、评论、收藏

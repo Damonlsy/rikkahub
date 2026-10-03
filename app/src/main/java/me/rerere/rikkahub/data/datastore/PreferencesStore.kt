@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -73,6 +75,8 @@ class SettingsStore(
     context: Context,
     scope: AppScope,
 ) : KoinComponent {
+    private val updateMutex = Mutex()
+
     companion object {
         // 版本号
         val VERSION = intPreferencesKey("data_version")
@@ -154,6 +158,11 @@ class SettingsStore(
         // 赞助提醒
         val SPONSOR_ALERT_DISMISSED_AT = intPreferencesKey("sponsor_alert_dismissed_at")
 
+        // 每日任务
+        val DAILY_AI_PUBLISH = stringPreferencesKey("daily_ai_publish")
+        val DAILY_REMINDER = stringPreferencesKey("daily_reminder")
+        val DEVICE_CONTEXT = stringPreferencesKey("device_context")
+
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings) {
             require(!settings.init) { "Cannot restore uninitialized settings" }
@@ -218,6 +227,9 @@ class SettingsStore(
                 preferences[BACKUP_REMINDER_CONFIG] = JsonInstant.encodeToString(settings.backupReminderConfig)
                 preferences[LAUNCH_COUNT] = settings.launchCount
                 preferences[SPONSOR_ALERT_DISMISSED_AT] = settings.sponsorAlertDismissedAt
+                preferences[DAILY_AI_PUBLISH] = JsonInstant.encodeToString(settings.dailyAiPublish)
+                preferences[DAILY_REMINDER] = JsonInstant.encodeToString(settings.dailyReminder)
+                preferences[DEVICE_CONTEXT] = JsonInstant.encodeToString(settings.deviceContext)
             }
         }
     }
@@ -315,6 +327,15 @@ class SettingsStore(
                 } ?: BackupReminderConfig(),
                 launchCount = preferences[LAUNCH_COUNT] ?: 0,
                 sponsorAlertDismissedAt = preferences[SPONSOR_ALERT_DISMISSED_AT] ?: 0,
+                dailyAiPublish = preferences[DAILY_AI_PUBLISH]?.let {
+                    JsonInstant.decodeFromString<DailyAiPublishSetting>(it)
+                } ?: DailyAiPublishSetting(),
+                dailyReminder = preferences[DAILY_REMINDER]?.let {
+                    JsonInstant.decodeFromString<DailyReminderSetting>(it)
+                } ?: DailyReminderSetting(),
+                deviceContext = preferences[DEVICE_CONTEXT]?.let {
+                    JsonInstant.decodeFromString<DeviceContextSetting>(it)
+                } ?: DeviceContextSetting(),
             )
         }
         .map {
@@ -416,7 +437,11 @@ class SettingsStore(
         .distinctUntilChanged()
         .toMutableStateFlow(scope, Settings.dummy())
 
-    suspend fun update(settings: Settings) {
+    suspend fun update(settings: Settings) = updateMutex.withLock {
+        updateUnlocked(settings)
+    }
+
+    private suspend fun updateUnlocked(settings: Settings) {
         if(settings.init) {
             Log.w(TAG, "Cannot update dummy settings")
             return
@@ -425,8 +450,8 @@ class SettingsStore(
         persistSettings(dataStore, settings)
     }
 
-    suspend fun update(fn: (Settings) -> Settings) {
-        update(fn(settingsFlow.value))
+    suspend fun update(fn: (Settings) -> Settings) = updateMutex.withLock {
+        updateUnlocked(fn(settingsFlow.value))
     }
 
     suspend fun updateAssistant(assistantId: Uuid) {
@@ -567,12 +592,36 @@ data class Settings(
     val launchCount: Int = 0,
     val sponsorAlertDismissedAt: Int = 0,
     val deviceContext: DeviceContextSetting = DeviceContextSetting(),
+    val dailyAiPublish: DailyAiPublishSetting = DailyAiPublishSetting(),
+    val dailyReminder: DailyReminderSetting = DailyReminderSetting(),
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
         fun dummy() = Settings(init = true)
     }
 }
+
+@Serializable
+data class DailyAiPublishSetting(
+    val enabled: Boolean = false,
+    val hour: Int = 22,
+    val minute: Int = 0,
+    val publishMoment: Boolean = true,
+    val lastCompletedDate: String = "",
+)
+
+/**
+ * 每日提醒任务：到点把用户写的提醒内容交给 AI，由 AI 决定要不要执行。
+ */
+@Serializable
+data class DailyReminderSetting(
+    val enabled: Boolean = false,
+    val hour: Int = 9,
+    val minute: Int = 0,
+    val content: String = "",
+    val aiCanSkip: Boolean = true,
+    val lastRunDate: String = "",
+)
 
 /**
  * Damonlsy fork：给 AI 的「设备上下文」注入开关。
@@ -624,13 +673,24 @@ enum class BackgroundEffectType {
 }
 
 @Serializable
+enum class ChatAvatarShape {
+    @SerialName("circle")
+    CIRCLE,
+
+    @SerialName("rounded_square")
+    ROUNDED_SQUARE,
+}
+
+@Serializable
 data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
     val useAppIconStyleLoadingIndicator: Boolean = true,
     val showUserAvatar: Boolean = true,
+    val chatAvatarShape: ChatAvatarShape = ChatAvatarShape.CIRCLE,
     val showAssistantBubble: Boolean = false,
     val assistantSplitParagraphs: Boolean = false,
+    val perBubbleAvatarName: Boolean = false,
     val userBubbleStyle: String = "default",
     val assistantBubbleStyle: String = "default",
     val bubbleOpacity: Float = 1.0f,

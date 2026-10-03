@@ -1,12 +1,16 @@
 package me.rerere.rikkahub.data.db.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
  * 经期记录：一天一条（同一日期重复记录会覆盖）。
  */
-@Entity(tableName = "period_records")
+@Entity(
+    tableName = "period_records",
+    indices = [Index(value = ["date"], unique = true)],
+)
 data class PeriodRecordEntity(
     @PrimaryKey(true) val id: Long = 0,
     /** yyyy-MM-dd */

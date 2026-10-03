@@ -26,6 +26,9 @@ data class LedgerEntity(
     val amount: Long,
     @ColumnInfo("note")
     val note: String = "",
+    /** 记录人："ai" 或 "user"；老数据为空串，显示时按 wallet 兜底推断 */
+    @ColumnInfo("recorder", defaultValue = "")
+    val recorder: String = "",
     @ColumnInfo("created_at")
     val createdAt: Long,
 )

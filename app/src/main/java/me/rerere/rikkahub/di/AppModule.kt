@@ -13,6 +13,8 @@ import me.rerere.rikkahub.data.datastore.ConversationCompressionStore
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.AiReminderWorker
+import me.rerere.rikkahub.service.DailyAiPublishWorker
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
@@ -22,8 +24,11 @@ import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.web.WebServerManager
 import me.rerere.tts.provider.TTSManager
 import org.koin.dsl.module
+import org.koin.androidx.workmanager.dsl.worker
 
 val appModule = module {
+    worker { params -> DailyAiPublishWorker(get(), params.get()) }
+    worker { params -> AiReminderWorker(get(), params.get()) }
     single<Json> { JsonInstant }
 
     single {
@@ -90,7 +95,11 @@ val appModule = module {
             mcpManager = get(),
             skillManager = get(),
             workspaceRepository = get(),
+            avatarPairRepository = get(),
+            aiPhoneRepository = get(),
             diaryDao = get(),
+            periodDao = get(),
+            anniversaryDao = get(),
             ledgerDao = get(),
             momentDao = get(),
             appLockStore = get(),

@@ -48,6 +48,7 @@ class LedgerVM(
                     kind = kind,
                     amount = (amountYuan * 100).roundToLong(),
                     note = note.trim(),
+                    recorder = "user",
                     createdAt = System.currentTimeMillis(),
                 )
             )
@@ -68,6 +69,7 @@ class LedgerVM(
                     kind = LEDGER_KIND_TRANSFER_OUT,
                     amount = cents,
                     note = note.trim(),
+                    recorder = "user",
                     createdAt = now,
                 )
             )
@@ -78,6 +80,7 @@ class LedgerVM(
                     kind = LEDGER_KIND_TRANSFER_IN,
                     amount = cents,
                     note = note.trim(),
+                    recorder = "user",
                     createdAt = now,
                 )
             )

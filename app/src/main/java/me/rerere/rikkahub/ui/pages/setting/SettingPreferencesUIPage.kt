@@ -53,6 +53,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete02
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.ChatAvatarShape
 import me.rerere.rikkahub.data.datastore.ChatFontFamily
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.data.files.FileFolders
@@ -161,6 +162,27 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                         },
                     )
                     item(
+                        headlineContent = { Text("聊天头像形状") },
+                        supportingContent = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = displaySetting.chatAvatarShape == ChatAvatarShape.CIRCLE,
+                                    onClick = {
+                                        updateDisplaySetting(displaySetting.copy(chatAvatarShape = ChatAvatarShape.CIRCLE))
+                                    },
+                                    label = { Text("圆形") },
+                                )
+                                FilterChip(
+                                    selected = displaySetting.chatAvatarShape == ChatAvatarShape.ROUNDED_SQUARE,
+                                    onClick = {
+                                        updateDisplaySetting(displaySetting.copy(chatAvatarShape = ChatAvatarShape.ROUNDED_SQUARE))
+                                    },
+                                    label = { Text("圆角方形") },
+                                )
+                            }
+                        },
+                    )
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_assistant_bubble_title)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_show_assistant_bubble_desc)) },
                         trailingContent = {
@@ -180,6 +202,18 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 checked = displaySetting.assistantSplitParagraphs,
                                 onCheckedChange = {
                                     updateDisplaySetting(displaySetting.copy(assistantSplitParagraphs = it))
+                                }
+                            )
+                        },
+                    )
+                    item(
+                        headlineContent = { Text("每条消息显示头像和名字") },
+                        supportingContent = { Text("用气泡分隔开的每一条 AI 消息都单独带上头像和名字") },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.perBubbleAvatarName,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(perBubbleAvatarName = it))
                                 }
                             )
                         },

@@ -77,11 +77,14 @@ import me.rerere.rikkahub.ui.hooks.rememberCustomAsrState
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantBasicPage
+import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantAvatarPairsPage
+import me.rerere.rikkahub.ui.pages.phone.AIPhonePage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantExtensionsPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantLocalToolPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantMcpPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantMemoryPage
+import me.rerere.rikkahub.ui.pages.assistant.detail.ContextMemoryPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantPromptPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantRequestPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
@@ -236,7 +239,9 @@ class RouteActivity : ComponentActivity() {
             Intent.ACTION_PROCESS_TEXT -> Screen.ShareHandler(
                 text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty(),
             )
-            else -> intent.getStringExtra("conversationId")?.let { Screen.Chat(it) }
+            else -> intent.getStringExtra("conversationId")
+                ?.takeIf { raw -> runCatching { Uuid.parse(raw) }.isSuccess }
+                ?.let { Screen.Chat(it) }
         }
         if (destination != null && backStack.lastOrNull() != destination) {
             backStack.add(destination)
@@ -420,12 +425,25 @@ class RouteActivity : ComponentActivity() {
                                 AssistantBasicPage(key.id)
                             }
 
+                            entry<Screen.AssistantAvatarPairs> { key ->
+                                AssistantAvatarPairsPage(key.id)
+                            }
+
+                            entry<Screen.AIPhone> { key ->
+                                val nav = LocalNavController.current
+                                AIPhonePage(key.assistantId, onBack = { nav.popBackStack() })
+                            }
+
                             entry<Screen.AssistantPrompt> { key ->
                                 AssistantPromptPage(key.id)
                             }
 
                             entry<Screen.AssistantMemory> { key ->
                                 AssistantMemoryPage(key.id)
+                            }
+
+                            entry<Screen.AssistantContextMemory> { key ->
+                                ContextMemoryPage(key.id)
                             }
 
                             entry<Screen.AssistantRequest> { key ->
@@ -717,10 +735,19 @@ sealed interface Screen : NavKey {
     data class AssistantBasic(val id: String) : Screen
 
     @Serializable
+    data class AssistantAvatarPairs(val id: String) : Screen
+
+    @Serializable
+    data class AIPhone(val assistantId: String) : Screen
+
+    @Serializable
     data class AssistantPrompt(val id: String) : Screen
 
     @Serializable
     data class AssistantMemory(val id: String) : Screen
+
+    @Serializable
+    data class AssistantContextMemory(val id: String) : Screen
 
     @Serializable
     data class AssistantRequest(val id: String) : Screen

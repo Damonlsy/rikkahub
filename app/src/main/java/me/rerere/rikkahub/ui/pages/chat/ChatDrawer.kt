@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -68,6 +71,7 @@ import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.LookTop
+import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Settings03
@@ -113,6 +117,8 @@ fun ChatDrawerContent(
     val toaster = LocalToaster.current
     val isPlayStore = rememberIsPlayStoreVersion()
     val repo = koinInject<ConversationRepository>()
+    val listeningConversations by repo.getConversationsOfAssistant(current.assistantId)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     val activity = context as ComponentActivity
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = activity)
@@ -142,13 +148,7 @@ fun ChatDrawerContent(
 
     // 昵称编辑状态
     val nicknameEditState = useEditState<String> { newNickname ->
-        vm.updateSettings(
-            settings.copy(
-                displaySetting = settings.displaySetting.copy(
-                    userNickname = newNickname
-                )
-            )
-        )
+        vm.updateUserNickname(newNickname)
     }
 
     // 移动对话状态
@@ -211,13 +211,7 @@ fun ChatDrawerContent(
                     name = settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) },
                     value = settings.displaySetting.userAvatar,
                     onUpdate = { newAvatar ->
-                        vm.updateSettings(
-                            settings.copy(
-                                displaySetting = settings.displaySetting.copy(
-                                    userAvatar = newAvatar
-                                )
-                            )
-                        )
+                        vm.updateUserAvatar(newAvatar)
                     },
                     modifier = Modifier.size(50.dp),
                 )
@@ -253,6 +247,26 @@ fun ChatDrawerContent(
                     Greeting(
                         style = MaterialTheme.typography.labelMedium,
                     )
+                }
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { navController.navigate(Screen.AIPhone(current.assistantId.toString())) },
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Lucide.NotebookPen, contentDescription = null)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("AI 小手机", fontWeight = FontWeight.SemiBold)
+                        Text("相册、备忘录、聊天与备注", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
 
@@ -328,6 +342,21 @@ fun ChatDrawerContent(
                 }
             )
 
+            val listeningConversationId = listeningConversations
+                .firstOrNull { it.isPinned }
+                ?.id
+                ?: listeningConversations.firstOrNull()?.id
+                ?: current.id
+            val listeningIntent = remember(context, listeningConversationId) {
+                Intent().setClassName(
+                    context.packageName,
+                    "me.rerere.rikkahub.privatefeature.AIListeningActivity",
+                ).putExtra("conversationId", listeningConversationId.toString())
+            }
+            val hasPrivateListening = remember(listeningIntent) {
+                listeningIntent.resolveActivity(context.packageManager) != null
+            }
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -355,6 +384,16 @@ fun ChatDrawerContent(
                                 navController.navigate(Screen.Assistant)
                             },
                         )
+                    }
+
+                    if (hasPrivateListening) {
+                        item {
+                            DrawerAction(
+                                icon = { Icon(HugeIcons.MusicNote03, "一起听") },
+                                label = { Text("一起听") },
+                                onClick = { context.startActivity(listeningIntent) },
+                            )
+                        }
                     }
 
                     item {

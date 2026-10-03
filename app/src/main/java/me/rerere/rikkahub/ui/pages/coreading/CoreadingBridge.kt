@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.coreading
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.util.Base64
 import android.webkit.JavascriptInterface
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -7,12 +10,17 @@ import kotlinx.serialization.Serializable
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.ChatAvatarShape
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.decodeAvatarBitmap
+import java.io.ByteArrayOutputStream
 import kotlin.uuid.Uuid
 
 /**
@@ -26,6 +34,7 @@ import kotlin.uuid.Uuid
  * - stop(): 停止当前生成
  */
 class CoreadingBridge(
+    private val context: Context,
     private val settingsStore: SettingsStore,
     private val chatService: ChatService,
     private val conversationRepo: ConversationRepository,
@@ -35,6 +44,10 @@ class CoreadingBridge(
 ) {
     @Serializable
     data class BridgeMessage(val role: String, val text: String)
+
+    /** 头像：type = image / emoji / dummy，value 为图片 URL 或表情内容 */
+    @Serializable
+    data class BridgeAvatar(val type: String, val value: String = "")
 
     @Serializable
     data class BridgeState(
@@ -46,6 +59,10 @@ class CoreadingBridge(
     data class BridgeBootstrap(
         val conversationId: String,
         val assistantName: String,
+        val assistantAvatar: BridgeAvatar = BridgeAvatar("dummy"),
+        val userName: String = "",
+        val userAvatar: BridgeAvatar = BridgeAvatar("dummy"),
+        val chatAvatarShape: ChatAvatarShape = ChatAvatarShape.CIRCLE,
         val state: BridgeState,
     )
 
@@ -110,6 +127,23 @@ class CoreadingBridge(
         return created
     }
 
+    private fun Avatar.toBridgeAvatar(): BridgeAvatar = when (this) {
+        is Avatar.Image -> when {
+            url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:image/") -> {
+                BridgeAvatar("image", url)
+            }
+            else -> decodeAvatarBitmap(context, url, maxSize = 256)?.let { bitmap ->
+                val bytes = ByteArrayOutputStream().use { output ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                    output.toByteArray()
+                }
+                BridgeAvatar("image", "data:image/png;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}")
+            } ?: BridgeAvatar("dummy")
+        }
+        is Avatar.Emoji -> BridgeAvatar("emoji", content)
+        is Avatar.Dummy -> BridgeAvatar("dummy")
+    }
+
     @JavascriptInterface
     fun bootstrap(): String = runBlocking {
         runCatching {
@@ -118,11 +152,15 @@ class CoreadingBridge(
             chatService.initializeConversation(conversation.id)
             val (loaded, generating) = conversation.id.conversationSnapshot()
             val settings = settingsStore.settingsFlow.first()
-            val assistant = settings.getCurrentAssistant()
+            val assistant = settings.getAssistantById(loaded.assistantId) ?: settings.getCurrentAssistant()
             JsonInstant.encodeToString(
                 BridgeBootstrap(
                     conversationId = conversation.id.toString(),
                     assistantName = assistant.name,
+                    assistantAvatar = assistant.avatar.toBridgeAvatar(),
+                    userName = settings.displaySetting.userNickname.ifBlank { "我" },
+                    userAvatar = settings.displaySetting.userAvatar.toBridgeAvatar(),
+                    chatAvatarShape = settings.displaySetting.chatAvatarShape,
                     state = currentState(loaded, generating),
                 )
             )

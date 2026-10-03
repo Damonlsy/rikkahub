@@ -12,4 +12,18 @@ data class MemoryEntity(
     val assistantId: String,
     @ColumnInfo("content")
     val content: String = "",
+    @ColumnInfo("kind", defaultValue = "manual")
+    val kind: String = "manual",
+    @ColumnInfo("source_conversation_id", defaultValue = "")
+    val sourceConversationId: String = "",
+    @ColumnInfo("created_at", defaultValue = "0")
+    val createdAt: Long = 0L,
+    @ColumnInfo("updated_at", defaultValue = "0")
+    val updatedAt: Long = 0L,
+    @ColumnInfo("deleted_at", defaultValue = "0")
+    val deletedAt: Long = 0L,
+    @ColumnInfo("confidence", defaultValue = "0.5")
+    val confidence: Float = 0.5f,
+    @ColumnInfo("importance", defaultValue = "0.5")
+    val importance: Float = 0.5f,
 )

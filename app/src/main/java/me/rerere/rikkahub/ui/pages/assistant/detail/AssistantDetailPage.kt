@@ -2,10 +2,13 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.BookOpen01
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Code
 import me.rerere.hugeicons.stroke.Message02
+import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Wrench01
@@ -28,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,6 +58,7 @@ fun AssistantDetailPage(id: String) {
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
+    val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -101,6 +106,13 @@ fun AssistantDetailPage(id: String) {
                         trailingContent = { Icon(HugeIcons.ArrowRight01, null) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.AssistantAvatarPairs(id)) },
+                        leadingContent = { Icon(HugeIcons.Image02, null) },
+                        supportingContent = { Text("添加成对头像，并标明 AI 与用户归属") },
+                        headlineContent = { Text("成对头像库") },
+                        trailingContent = { Icon(HugeIcons.ArrowRight01, null) },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.AssistantPrompt(id)) },
                         leadingContent = { Icon(HugeIcons.Message02, null) },
                         supportingContent = { Text(stringResource(R.string.assistant_detail_prompt_desc)) },
@@ -119,6 +131,56 @@ fun AssistantDetailPage(id: String) {
                         leadingContent = { Icon(HugeIcons.Brain02, null) },
                         supportingContent = { Text(stringResource(R.string.assistant_detail_memory_desc)) },
                         headlineContent = { Text(stringResource(R.string.assistant_page_tab_memory)) },
+                        trailingContent = { Icon(HugeIcons.ArrowRight01, null) },
+                    )
+                    item(
+                        onClick = {
+                            val nativeIntent = Intent().setClassName(
+                                context.packageName,
+                                "me.rerere.rikkahub.privatefeature.MemoryArchiveActivity",
+                            ).putExtra("assistantId", id)
+                            val opened = try {
+                                if (nativeIntent.resolveActivity(context.packageManager) != null) {
+                                    context.startActivity(nativeIntent)
+                                    true
+                                } else {
+                                    false
+                                }
+                            } catch (_: ActivityNotFoundException) {
+                                false
+                            }
+                            if (!opened) {
+                                navController.navigate(Screen.AssistantContextMemory(id))
+                            }
+                        },
+                        leadingContent = { Icon(HugeIcons.Brain02, null) },
+                        supportingContent = { Text("原生记忆管理：压缩记录与长期记忆") },
+                        headlineContent = { Text("上下文记忆库") },
+                        trailingContent = { Icon(HugeIcons.ArrowRight01, null) },
+                    )
+                    item(
+                        onClick = {
+                            val archiveIntent = Intent().setClassName(
+                                context.packageName,
+                                "me.rerere.rikkahub.privatefeature.MemoryArchiveWebActivity",
+                            ).putExtra("assistantId", id)
+                            val opened = try {
+                                if (archiveIntent.resolveActivity(context.packageManager) != null) {
+                                    context.startActivity(archiveIntent)
+                                    true
+                                } else {
+                                    false
+                                }
+                            } catch (_: ActivityNotFoundException) {
+                                false
+                            }
+                            if (!opened) {
+                                navController.navigate(Screen.AssistantContextMemory(id))
+                            }
+                        },
+                        leadingContent = { Icon(HugeIcons.Brain02, null) },
+                        supportingContent = { Text("封存时光插件：原网页美化视图") },
+                        headlineContent = { Text("乔木记忆档案") },
                         trailingContent = { Icon(HugeIcons.ArrowRight01, null) },
                     )
                     item(

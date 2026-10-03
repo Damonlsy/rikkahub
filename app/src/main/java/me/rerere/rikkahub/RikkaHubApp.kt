@@ -74,6 +74,29 @@ class RikkaHubApp : Application() {
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule, pluginModule)
         }
+        val settingsStore = org.koin.java.KoinJavaComponent.get<me.rerere.rikkahub.data.datastore.SettingsStore>(
+            me.rerere.rikkahub.data.datastore.SettingsStore::class.java
+        )
+        val appScope = org.koin.java.KoinJavaComponent.get<AppScope>(AppScope::class.java)
+        appScope.launch {
+            val settings = settingsStore.settingsFlowRaw.first()
+            val daily = settings.dailyAiPublish
+            if (daily.enabled) {
+                me.rerere.rikkahub.service.DailyAiPublishWorker.scheduleNext(
+                    this@RikkaHubApp,
+                    daily.hour,
+                    daily.minute,
+                )
+            }
+            val reminder = settings.dailyReminder
+            if (reminder.enabled) {
+                me.rerere.rikkahub.service.AiReminderWorker.scheduleNext(
+                    this@RikkaHubApp,
+                    reminder.hour,
+                    reminder.minute,
+                )
+            }
+        }
         this.createNotificationChannel()
 
         // set cursor window size to 32MB

@@ -255,20 +255,41 @@ function openFinale(){
 const APP=!!window.Coreading;
 let appReady=false,appStateGen=false,appSig="",appPoll=null,appCtxTimer=null,appBootDone=false;
 function appJson(s){try{return JSON.parse(s)}catch(e){return{error:"解析失败 "+e.message}}}
+// 聊天头像/昵称：App bootstrap 会覆盖；浏览器演示用默认值
+const CHATMETA={aiName:"你的助手",aiAva:{type:"dummy",value:""},uName:"我",uAva:{type:"dummy",value:""}};
+function avaHtml(a,name){
+  if(a&&a.type==="image"&&a.value)return '<img src="'+esc(a.value)+'" alt="">';
+  if(a&&a.type==="emoji"&&a.value)return esc(a.value);
+  const ch=(name||"?").trim().charAt(0)||"?";
+  return esc(ch).toUpperCase();
+}
+function buildMsgRow(side,textHtml){
+  const me=side==="me";
+  const row=document.createElement("div");
+  row.className="msgrow "+side;
+  const ava=document.createElement("div");ava.className="msgava";
+  ava.innerHTML=avaHtml(me?CHATMETA.uAva:CHATMETA.aiAva,me?CHATMETA.uName:CHATMETA.aiName);
+  const head=document.createElement("div");head.className="msghead";
+  const nm=document.createElement("div");nm.className="msgname";
+  nm.textContent=me?CHATMETA.uName:CHATMETA.aiName;
+  const bubble=document.createElement("div");bubble.className="msg "+side;
+  bubble.innerHTML=textHtml;
+  if(me){head.appendChild(ava);head.appendChild(nm)}
+  else{head.appendChild(ava);head.appendChild(nm)}
+  row.appendChild(head);row.appendChild(bubble);
+  return {row:row,bubble:bubble};
+}
 function renderAppMessages(st){
   const sig=JSON.stringify([st.isGenerating,st.messages]);
   if(sig===appSig)return;
   appSig=sig;
   const box=$("#msgs");box.innerHTML="";
   st.messages.forEach(m=>{
-    const el=document.createElement("div");
-    el.className="msg "+(m.role==="user"?"me":"ai");
-    el.innerHTML=esc(m.text).replace(/\n/g,"<br>");
-    box.appendChild(el);
+    const r=buildMsgRow(m.role==="user"?"me":"ai",esc(m.text).replace(/\n/g,"<br>"));
+    box.appendChild(r.row);
   });
   if(st.isGenerating){
-    const d=document.createElement("div");d.className="msg ai";d.id="genDot";
-    d.textContent="正在写…";box.appendChild(d);
+    const r=buildMsgRow("ai","正在写…");r.bubble.id="genDot";box.appendChild(r.row);
   }
   box.scrollTop=1e9;
   $("#sendBtn").textContent=st.isGenerating?"■":"➤";
@@ -289,6 +310,13 @@ function appBoot(){
   appReady=true;
   $("#chatName").textContent=r.assistantName||"你的助手";
   $("#chatSub").textContent="《"+curBook().title+"》· 与"+(r.assistantName||"助手")+"共读";
+  CHATMETA.aiName=r.assistantName||"你的助手";
+  CHATMETA.aiAva=r.assistantAvatar||{type:"dummy",value:""};
+  CHATMETA.uName=r.userName||"我";
+  CHATMETA.uAva=r.userAvatar||{type:"dummy",value:""};
+  document.documentElement.style.setProperty("--chat-avatar-radius",r.chatAvatarShape==="rounded_square"?"15%":"50%");
+  $("#chatAvatar").innerHTML=avaHtml(CHATMETA.aiAva,CHATMETA.aiName);
+  appSig=""; // 头像/昵称到位后强制重渲染一次
   renderAppMessages(r.state);
   appStateGen=!!(r.state&&r.state.isGenerating);
   appStartPoll();
@@ -312,8 +340,9 @@ function appReportProgress(){
 }
 function toggleChat(open){$("#chat").classList.toggle("open",open)}
 function pushMsg(role,html){
-  const el=document.createElement("div");el.className="msg "+role;el.innerHTML=html;
-  $("#msgs").appendChild(el);$("#msgs").scrollTop=1e9;return el;
+  const r=buildMsgRow(role==="me"?"me":"ai",html);
+  $("#msgs").appendChild(r.row);$("#msgs").scrollTop=1e9;
+  return r.bubble;
 }
 function addStarTo(el,text,src){
   if(el.querySelector(".msgfav"))return;

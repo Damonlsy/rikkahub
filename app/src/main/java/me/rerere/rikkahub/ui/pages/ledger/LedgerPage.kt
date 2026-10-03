@@ -58,6 +58,7 @@ import com.composables.icons.lucide.Trash2
 import com.composables.icons.lucide.Wallet
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.db.entity.LedgerEntity
+import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.pages.chat.AssistantBackground
@@ -81,6 +82,7 @@ fun LedgerPage(
     var showAdd by remember { mutableStateOf(false) }
     var showTransfer by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<StatDetail?>(null) }
+    var selectedEntry by remember { mutableStateOf<LedgerEntity?>(null) }
     var selectedWallet by remember { mutableStateOf(LEDGER_WALLET_USER) }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -169,7 +171,11 @@ fun LedgerPage(
                         }
                     }
                     items(walletEntries, key = { it.id }) { entry ->
-                        LedgerRow(entry = entry, onDelete = { vm.delete(entry.id) })
+                        LedgerRow(
+                            entry = entry,
+                            onClick = { selectedEntry = entry },
+                            onDelete = { vm.delete(entry.id) },
+                        )
                     }
                 }
             }
@@ -201,6 +207,13 @@ fun LedgerPage(
             detail = d,
             entries = entries,
             onDismiss = { detail = null },
+        )
+    }
+
+    selectedEntry?.let { entry ->
+        LedgerEntryDetailDialog(
+            entry = entry,
+            onDismiss = { selectedEntry = null },
         )
     }
 }
@@ -340,11 +353,13 @@ private fun StatBox(
 @Composable
 private fun LedgerRow(
     entry: LedgerEntity,
+    onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val isAi = entry.wallet == LEDGER_WALLET_AI
+    val settings = LocalSettings.current
+    val assistant = settings.getCurrentAssistant()
+    val recorder = entry.recorder.ifBlank { entry.wallet }
     val isIncome = entry.kind == LEDGER_KIND_INCOME || entry.kind == LEDGER_KIND_TRANSFER_IN
-    val accent = if (isAi) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
     val kindLabel = when (entry.kind) {
         LEDGER_KIND_INCOME -> "收入"
         LEDGER_KIND_EXPENSE -> "支出"
@@ -352,8 +367,15 @@ private fun LedgerRow(
         LEDGER_KIND_TRANSFER_IN -> "收到转赠"
         else -> entry.kind
     }
+    val recorderName = when (recorder) {
+        LEDGER_WALLET_AI -> assistant.name.ifBlank { "AI" }
+        LEDGER_WALLET_USER -> settings.displaySetting.userNickname.ifBlank { "我" }
+        else -> "历史记录"
+    }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
@@ -363,17 +385,16 @@ private fun LedgerRow(
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = accent.copy(alpha = 0.16f),
-            ) {
-                Text(
-                    text = if (isAi) "AI" else "我",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = accent,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
+            UIAvatar(
+                name = recorderName,
+                value = when (recorder) {
+                    LEDGER_WALLET_AI -> assistant.avatar
+                    LEDGER_WALLET_USER -> settings.displaySetting.userAvatar
+                    else -> Avatar.Dummy
+                },
+                modifier = Modifier.size(32.dp),
+                loading = false,
+            )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -383,7 +404,7 @@ private fun LedgerRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = kindLabel,
+                    text = "$kindLabel · $recorderName",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -470,6 +491,83 @@ private fun LedgerDetailDialog(
             TextButton(onClick = onDismiss) { Text("关闭") }
         },
     )
+}
+
+@Composable
+private fun LedgerEntryDetailDialog(
+    entry: LedgerEntity,
+    onDismiss: () -> Unit,
+) {
+    val settings = LocalSettings.current
+    val assistant = settings.getCurrentAssistant()
+    val recorder = entry.recorder.ifBlank { entry.wallet }
+    val isIncome = entry.kind == LEDGER_KIND_INCOME || entry.kind == LEDGER_KIND_TRANSFER_IN
+    val kindLabel = when (entry.kind) {
+        LEDGER_KIND_INCOME -> "收入"
+        LEDGER_KIND_EXPENSE -> "支出"
+        LEDGER_KIND_TRANSFER_OUT -> "转赠"
+        LEDGER_KIND_TRANSFER_IN -> "收到转赠"
+        else -> entry.kind
+    }
+    val recorderName = when (recorder) {
+        LEDGER_WALLET_AI -> assistant.name.ifBlank { "AI" }
+        LEDGER_WALLET_USER -> settings.displaySetting.userNickname.ifBlank { "我" }
+        else -> "历史记录"
+    }
+    val walletLabel = if (entry.wallet == LEDGER_WALLET_AI) "AI 的小荷包" else "我的小荷包"
+    val timeText = remember(entry.createdAt) {
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(entry.createdAt))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UIAvatar(
+                    name = recorderName,
+                    value = when (recorder) {
+                        LEDGER_WALLET_AI -> assistant.avatar
+                        LEDGER_WALLET_USER -> settings.displaySetting.userAvatar
+                        else -> Avatar.Dummy
+                    },
+                    modifier = Modifier.size(28.dp),
+                    loading = false,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("$recorderName 记的")
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                DetailRow("时间", timeText)
+                DetailRow("金额", (if (isIncome) "+" else "-") + formatYuan(entry.amount))
+                DetailRow("类型", kindLabel)
+                DetailRow("钱包", walletLabel)
+                DetailRow("原因", entry.note.ifBlank { "—" })
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(48.dp),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
 
 @Composable
